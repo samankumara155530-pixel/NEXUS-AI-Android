@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
 
 private enum class Tab { CHAT, NOTES, TOOLS, SETTINGS }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NexusApp() {
     var dark by remember { mutableStateOf(false) }
