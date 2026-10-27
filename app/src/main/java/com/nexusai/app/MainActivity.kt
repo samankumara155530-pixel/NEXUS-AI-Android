@@ -172,7 +172,9 @@ private fun NexusApp() {
                         Spacer(Modifier.height(12.dp))
 
                         LazyColumn(
-                            Modifier.weight(1f).fillMaxWidth()
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
                         ) {
                             items(chatMessages) { message ->
                                 Card(
@@ -248,58 +250,62 @@ private fun NexusApp() {
                                                         ).openConnection()
                                                             as java.net.HttpURLConnection
 
-                                                    connection.requestMethod = "POST"
-                                                    connection.connectTimeout = 15000
-                                                    connection.readTimeout = 60000
-                                                    connection.doOutput = true
+                                                    try {
+                                                        connection.requestMethod = "POST"
+                                                        connection.connectTimeout = 15000
+                                                        connection.readTimeout = 60000
+                                                        connection.doOutput = true
 
-                                                    connection.setRequestProperty(
-                                                        "Content-Type",
-                                                        "application/json; charset=utf-8"
-                                                    )
+                                                        connection.setRequestProperty(
+                                                            "Content-Type",
+                                                            "application/json; charset=utf-8"
+                                                        )
 
-                                                    val body =
-                                                        org.json.JSONObject()
-                                                            .put("message", message)
-                                                            .toString()
+                                                        val body =
+                                                            org.json.JSONObject()
+                                                                .put("message", message)
+                                                                .toString()
 
-                                                    connection.outputStream.use {
-                                                        it.write(body.toByteArray(Charsets.UTF_8))
-                                                    }
+                                                        connection.outputStream.use {
+                                                            it.write(
+                                                                body.toByteArray(Charsets.UTF_8)
+                                                            )
+                                                        }
 
-                                                    val code = connection.responseCode
+                                                        val code = connection.responseCode
 
-                                                    val stream =
-                                                        if (code in 200..299)
-                                                            connection.inputStream
-                                                        else
-                                                            connection.errorStream
-
-                                                    val responseText =
-                                                        stream
-                                                            ?.bufferedReader(Charsets.UTF_8)
-                                                            ?.use { it.readText() }
-                                                            .orEmpty()
-
-                                                    connection.disconnect()
-
-                                                    val json =
-                                                        org.json.JSONObject(responseText)
-
-                                                    if (code in 200..299) {
-                                                        json.optString("reply")
-                                                            .takeIf { it.isNotBlank() }
-                                                            ?: if (sinhala)
-                                                                "AI වෙතින් පිළිතුරක් ලැබුණේ නැහැ."
+                                                        val stream =
+                                                            if (code in 200..299)
+                                                                connection.inputStream
                                                             else
-                                                                "The AI returned an empty reply."
-                                                    } else {
-                                                        json.optString("error")
-                                                            .takeIf { it.isNotBlank() }
-                                                            ?: if (sinhala)
-                                                                "AI සේවාවට සම්බන්ධ වීමට නොහැකි වුණා."
-                                                            else
-                                                                "Could not connect to the AI service."
+                                                                connection.errorStream
+
+                                                        val responseText =
+                                                            stream
+                                                                ?.bufferedReader(Charsets.UTF_8)
+                                                                ?.use { it.readText() }
+                                                                .orEmpty()
+
+                                                        val json =
+                                                            org.json.JSONObject(responseText)
+
+                                                        if (code in 200..299) {
+                                                            json.optString("reply")
+                                                                .takeIf { it.isNotBlank() }
+                                                                ?: if (sinhala)
+                                                                    "AI වෙතින් පිළිතුරක් ලැබුණේ නැහැ."
+                                                                else
+                                                                    "The AI returned an empty reply."
+                                                        } else {
+                                                            json.optString("error")
+                                                                .takeIf { it.isNotBlank() }
+                                                                ?: if (sinhala)
+                                                                    "AI සේවාවට සම්බන්ධ වීමට නොහැකි වුණා."
+                                                                else
+                                                                    "Could not connect to the AI service."
+                                                        }
+                                                    } finally {
+                                                        connection.disconnect()
                                                     }
                                                 } catch (_: Exception) {
                                                     if (sinhala)
@@ -435,22 +441,59 @@ private fun NexusApp() {
                             if (sinhala) "දිනදර්ශන සිදුවීමක්" else "Calendar event",
                             Icons.Default.CalendarMonth
                         ) {
-                            val intent =
-                                Intent(Intent.ACTION_INSERT)
-                                    .setData(CalendarContract.Events.CONTENT_URI)
-                                    .putExtra(
+                            val startTime = System.currentTimeMillis()
+                            val endTime = startTime + 60 * 60 * 1000L
+
+                            val calendarIntent =
+                                Intent(Intent.ACTION_INSERT).apply {
+                                    setData(CalendarContract.Events.CONTENT_URI)
+
+                                    putExtra(
                                         CalendarContract.Events.TITLE,
-                                        if (sinhala) "NEXUS AI සිදුවීම"
-                                        else "NEXUS AI event"
+                                        if (sinhala)
+                                            "NEXUS AI සිදුවීම"
+                                        else
+                                            "NEXUS AI event"
                                     )
 
+                                    putExtra(
+                                        CalendarContract.EXTRA_EVENT_BEGIN_TIME,
+                                        startTime
+                                    )
+
+                                    putExtra(
+                                        CalendarContract.EXTRA_EVENT_END_TIME,
+                                        endTime
+                                    )
+                                }
+
                             try {
-                                context.startActivity(intent)
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        calendarIntent,
+                                        if (sinhala)
+                                            "දින දර්ශනය තෝරන්න"
+                                        else
+                                            "Choose calendar"
+                                    )
+                                )
+                            } catch (_: ActivityNotFoundException) {
+                                Toast.makeText(
+                                    context,
+                                    if (sinhala)
+                                        "දින දර්ශන යෙදුම විවෘත කළ නොහැක. Google Calendar පරීක්ෂා කරන්න."
+                                    else
+                                        "Could not open a calendar app. Check Google Calendar.",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             } catch (_: Exception) {
                                 Toast.makeText(
                                     context,
-                                    "Calendar unavailable",
-                                    Toast.LENGTH_SHORT
+                                    if (sinhala)
+                                        "දින දර්ශනය විවෘත කිරීමේදී දෝෂයක් ඇති වුණා."
+                                    else
+                                        "An error occurred while opening the calendar.",
+                                    Toast.LENGTH_LONG
                                 ).show()
                             }
                         }
