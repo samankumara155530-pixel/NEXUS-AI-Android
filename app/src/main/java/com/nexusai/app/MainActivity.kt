@@ -53,9 +53,9 @@ private fun NexusApp() {
         mutableStateOf(
             listOf(
                 if (sinhala)
-                    "NEXUS AI වෙත සාදරයෙන් පිළිගනිමු. AI සේවාව තවම සම්බන්ධ කර නැත."
+                    "NEXUS AI වෙත සාදරයෙන් පිළිගනිමු."
                 else
-                    "Welcome to NEXUS AI. The AI service is not connected yet."
+                    "Welcome to NEXUS AI."
             )
         )
     }
@@ -162,9 +162,9 @@ private fun NexusApp() {
                                 Spacer(Modifier.height(8.dp))
                                 Text(
                                     if (sinhala)
-                                        "මෙය මූලික යෙදුම් සැලසුමයි. සැබෑ AI පිළිතුරු ලබාගැනීමට ආරක්ෂිත backend එකක් සම්බන්ධ කළ යුතුයි."
+                                        "ඔබේ පණිවිඩය යවා AI පිළිතුර ලබාගන්න."
                                     else
-                                        "This is the initial app shell. A secure backend must be connected for real AI answers."
+                                        "Send a message to receive an AI reply."
                                 )
                             }
                         }
@@ -217,7 +217,7 @@ private fun NexusApp() {
                                         Toast.makeText(
                                             context,
                                             if (sinhala)
-                                                "මෙම දුරකථනයේ Speech Recognition සේවාවක් නැහැ."
+                                                "Speech Recognition සේවාව ලබාගත නොහැක."
                                             else
                                                 "Speech recognition is unavailable.",
                                             Toast.LENGTH_LONG
@@ -273,7 +273,6 @@ private fun NexusApp() {
                                                         }
 
                                                         val code = connection.responseCode
-
                                                         val stream =
                                                             if (code in 200..299)
                                                                 connection.inputStream
@@ -293,7 +292,7 @@ private fun NexusApp() {
                                                             json.optString("reply")
                                                                 .takeIf { it.isNotBlank() }
                                                                 ?: if (sinhala)
-                                                                    "AI වෙතින් පිළිතුරක් ලැබුණේ නැහැ."
+                                                                    "AI පිළිතුරක් ලැබුණේ නැහැ."
                                                                 else
                                                                     "The AI returned an empty reply."
                                                         } else {
@@ -309,9 +308,9 @@ private fun NexusApp() {
                                                     }
                                                 } catch (_: Exception) {
                                                     if (sinhala)
-                                                        "සම්බන්ධතාවයේ ගැටලුවක් ඇති වුණා. අන්තර්ජාලය පරීක්ෂා කර නැවත උත්සාහ කරන්න."
+                                                        "සම්බන්ධතාවයේ ගැටලුවක් ඇති වුණා. අන්තර්ජාලය පරීක්ෂා කරන්න."
                                                     else
-                                                        "Connection failed. Check your internet and try again."
+                                                        "Connection failed. Check your internet."
                                                 }
                                             }
 
@@ -447,7 +446,6 @@ private fun NexusApp() {
                             val calendarIntent =
                                 Intent(Intent.ACTION_INSERT).apply {
                                     setData(CalendarContract.Events.CONTENT_URI)
-
                                     putExtra(
                                         CalendarContract.Events.TITLE,
                                         if (sinhala)
@@ -455,12 +453,10 @@ private fun NexusApp() {
                                         else
                                             "NEXUS AI event"
                                     )
-
                                     putExtra(
                                         CalendarContract.EXTRA_EVENT_BEGIN_TIME,
                                         startTime
                                     )
-
                                     putExtra(
                                         CalendarContract.EXTRA_EVENT_END_TIME,
                                         endTime
@@ -468,31 +464,31 @@ private fun NexusApp() {
                                 }
 
                             try {
-                                context.startActivity(
-                                    Intent.createChooser(
-                                        calendarIntent,
-                                        if (sinhala)
-                                            "දින දර්ශනය තෝරන්න"
-                                        else
-                                            "Choose calendar"
+                                val googleCalendarIntent =
+                                    Intent(calendarIntent).apply {
+                                        setPackage("com.google.android.calendar")
+                                    }
+
+                                try {
+                                    context.startActivity(googleCalendarIntent)
+                                } catch (_: ActivityNotFoundException) {
+                                    context.startActivity(
+                                        Intent.createChooser(
+                                            calendarIntent,
+                                            if (sinhala)
+                                                "දින දර්ශනය තෝරන්න"
+                                            else
+                                                "Choose calendar"
+                                        )
                                     )
-                                )
-                            } catch (_: ActivityNotFoundException) {
-                                Toast.makeText(
-                                    context,
-                                    if (sinhala)
-                                        "දින දර්ශන යෙදුම විවෘත කළ නොහැක. Google Calendar පරීක්ෂා කරන්න."
-                                    else
-                                        "Could not open a calendar app. Check Google Calendar.",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                }
                             } catch (_: Exception) {
                                 Toast.makeText(
                                     context,
                                     if (sinhala)
-                                        "දින දර්ශනය විවෘත කිරීමේදී දෝෂයක් ඇති වුණා."
+                                        "දිනදර්ශනය විවෘත කළ නොහැක."
                                     else
-                                        "An error occurred while opening the calendar.",
+                                        "Could not open the calendar.",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
