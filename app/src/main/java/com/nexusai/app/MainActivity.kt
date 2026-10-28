@@ -746,7 +746,6 @@ private fun NexusApp() {
         }
     }
 }
-
 @Composable
 private fun ToolButton(
     label: String,
@@ -760,14 +759,14 @@ private fun ToolButton(
             .padding(vertical = 5.dp)
     ) {
         Icon(
-            icon,
-            contentDescription = null
+            imageVector = icon,
+            contentDescription = label
         )
 
         Spacer(
             modifier = Modifier.width(10.dp)
         )
 
-        Text(label)
+        Text(text = label)
     }
 }
