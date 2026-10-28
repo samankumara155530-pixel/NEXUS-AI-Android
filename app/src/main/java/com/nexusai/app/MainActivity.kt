@@ -437,61 +437,69 @@ private fun NexusApp() {
                         }
 
                         ToolButton(
-                            if (sinhala) "දිනදර්ශන සිදුවීමක්" else "Calendar event",
-                            Icons.Default.CalendarMonth
-                        ) {
-                            val startTime = System.currentTimeMillis()
-                            val endTime = startTime + 60 * 60 * 1000L
+if (sinhala) "දිනදර්ශන සිදුවීමක්" else "Calendar event",
+Icons.Default.CalendarMonth
+) {
+// Diagnostic message: confirm the button click is received.
+Toast.makeText(
+context,
+"Calendar button pressed",
+Toast.LENGTH_LONG
+).show()
 
-                            val calendarIntent =
-                                Intent(Intent.ACTION_INSERT).apply {
-                                    setData(CalendarContract.Events.CONTENT_URI)
-                                    putExtra(
-                                        CalendarContract.Events.TITLE,
-                                        if (sinhala)
-                                            "NEXUS AI සිදුවීම"
-                                        else
-                                            "NEXUS AI event"
-                                    )
-                                    putExtra(
-                                        CalendarContract.EXTRA_EVENT_BEGIN_TIME,
-                                        startTime
-                                    )
-                                    putExtra(
-                                        CalendarContract.EXTRA_EVENT_END_TIME,
-                                        endTime
-                                    )
+                        val startTime = System.currentTimeMillis()
+                        val endTime = startTime + 60 * 60 * 1000L
+
+                        val calendarIntent =
+                            Intent(Intent.ACTION_INSERT).apply {
+                                setData(CalendarContract.Events.CONTENT_URI)
+                                putExtra(
+                                    CalendarContract.Events.TITLE,
+                                    if (sinhala)
+                                        "NEXUS AI සිදුවීම"
+                                    else
+                                        "NEXUS AI event"
+                                )
+                                putExtra(
+                                    CalendarContract.EXTRA_EVENT_BEGIN_TIME,
+                                    startTime
+                                )
+                                putExtra(
+                                    CalendarContract.EXTRA_EVENT_END_TIME,
+                                    endTime
+                                )
+                            }
+
+                        try {
+                            val googleCalendarIntent =
+                                Intent(calendarIntent).apply {
+                                    setPackage("com.google.android.calendar")
                                 }
 
                             try {
-                                val googleCalendarIntent =
-                                    Intent(calendarIntent).apply {
-                                        setPackage("com.google.android.calendar")
-                                    }
-
-                                try {
-                                    context.startActivity(googleCalendarIntent)
-                                } catch (_: ActivityNotFoundException) {
-                                    context.startActivity(
-                                        Intent.createChooser(
-                                            calendarIntent,
-                                            if (sinhala)
-                                                "දින දර්ශනය තෝරන්න"
-                                            else
-                                                "Choose calendar"
-                                        )
+                                context.startActivity(googleCalendarIntent)
+                            } catch (_: ActivityNotFoundException) {
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        calendarIntent,
+                                        if (sinhala)
+                                            "දින දර්ශනය තෝරන්න"
+                                        else
+                                            "Choose calendar"
                                     )
-                                }
-                            } catch (_: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    if (sinhala)
-                                        "දිනදර්ශනය විවෘත කළ නොහැක."
-                                    else
-                                        "Could not open the calendar.",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                )
                             }
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                if (sinhala)
+                                    "දිනදර්ශනය විවෘත කළ නොහැක: ${e.javaClass.simpleName}"
+                                else
+                                    "Could not open calendar: ${e.javaClass.simpleName}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
                         }
                     }
 
