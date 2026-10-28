@@ -437,69 +437,67 @@ private fun NexusApp() {
                         }
 
                         ToolButton(
-if (sinhala) "දිනදර්ශන සිදුවීමක්" else "Calendar event",
-Icons.Default.CalendarMonth
-) {
-// Diagnostic message: confirm the button click is received.
-Toast.makeText(
-context,
-"Calendar button pressed",
-Toast.LENGTH_LONG
-).show()
+                            if (sinhala) "දිනදර්ශන සිදුවීමක්" else "Calendar event",
+                            Icons.Default.CalendarMonth
+                        ) {
+                            Toast.makeText(
+                                context,
+                                "Calendar button pressed",
+                                Toast.LENGTH_LONG
+                            ).show()
 
-                        val startTime = System.currentTimeMillis()
-                        val endTime = startTime + 60 * 60 * 1000L
+                            val startTime = System.currentTimeMillis()
+                            val endTime = startTime + 60 * 60 * 1000L
 
-                        val calendarIntent =
-                            Intent(Intent.ACTION_INSERT).apply {
-                                setData(CalendarContract.Events.CONTENT_URI)
-                                putExtra(
-                                    CalendarContract.Events.TITLE,
-                                    if (sinhala)
-                                        "NEXUS AI සිදුවීම"
-                                    else
-                                        "NEXUS AI event"
-                                )
-                                putExtra(
-                                    CalendarContract.EXTRA_EVENT_BEGIN_TIME,
-                                    startTime
-                                )
-                                putExtra(
-                                    CalendarContract.EXTRA_EVENT_END_TIME,
-                                    endTime
-                                )
-                            }
-
-                        try {
-                            val googleCalendarIntent =
-                                Intent(calendarIntent).apply {
-                                    setPackage("com.google.android.calendar")
+                            val calendarIntent =
+                                Intent(Intent.ACTION_INSERT).apply {
+                                    setData(CalendarContract.Events.CONTENT_URI)
+                                    putExtra(
+                                        CalendarContract.Events.TITLE,
+                                        if (sinhala)
+                                            "NEXUS AI සිදුවීම"
+                                        else
+                                            "NEXUS AI event"
+                                    )
+                                    putExtra(
+                                        CalendarContract.EXTRA_EVENT_BEGIN_TIME,
+                                        startTime
+                                    )
+                                    putExtra(
+                                        CalendarContract.EXTRA_EVENT_END_TIME,
+                                        endTime
+                                    )
                                 }
 
                             try {
-                                context.startActivity(googleCalendarIntent)
-                            } catch (_: ActivityNotFoundException) {
-                                context.startActivity(
-                                    Intent.createChooser(
-                                        calendarIntent,
-                                        if (sinhala)
-                                            "දින දර්ශනය තෝරන්න"
-                                        else
-                                            "Choose calendar"
+                                val googleCalendarIntent =
+                                    Intent(calendarIntent).apply {
+                                        setPackage("com.google.android.calendar")
+                                    }
+
+                                try {
+                                    context.startActivity(googleCalendarIntent)
+                                } catch (_: ActivityNotFoundException) {
+                                    context.startActivity(
+                                        Intent.createChooser(
+                                            calendarIntent,
+                                            if (sinhala)
+                                                "දින දර්ශනය තෝරන්න"
+                                            else
+                                                "Choose calendar"
+                                        )
                                     )
-                                )
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    if (sinhala)
+                                        "දිනදර්ශනය විවෘත කළ නොහැක: ${e.javaClass.simpleName}"
+                                    else
+                                        "Could not open calendar: ${e.javaClass.simpleName}",
+                                    Toast.LENGTH_LONG
+                                ).show()
                             }
-                        } catch (e: Exception) {
-                            Toast.makeText(
-                                context,
-                                if (sinhala)
-                                    "දිනදර්ශනය විවෘත කළ නොහැක: ${e.javaClass.simpleName}"
-                                else
-                                    "Could not open calendar: ${e.javaClass.simpleName}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
                         }
                     }
 
@@ -544,46 +542,4 @@ Toast.LENGTH_LONG
                             if (sinhala) "යාවත්කාලීන මධ්‍යස්ථානය"
                             else "Update Center",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Text(
-                            if (sinhala)
-                                "මෙය දැනට පෙන්වීමක් පමණි. සැබෑ update server එකක් සම්බන්ධ කර නැත."
-                            else
-                                "Display placeholder only. No update server is connected."
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            if (sinhala)
-                                "අනුවාදය: 1.0.0 • AI backend: සම්බන්ධ කර නැත"
-                            else
-                                "Version: 1.0.0 • AI backend: not connected",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ToolButton(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
-) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp)
-    ) {
-        Icon(icon, contentDescription = null)
-        Spacer(Modifier.width(10.dp))
-        Text(label)
-    }
-}
+                            font
