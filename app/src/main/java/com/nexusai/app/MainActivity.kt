@@ -30,11 +30,15 @@ import androidx.compose.ui.unit.dp
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { NexusApp() }
+        setContent {
+            NexusApp()
+        }
     }
 }
 
-private enum class Tab { CHAT, NOTES, TOOLS, SETTINGS }
+private enum class Tab {
+    CHAT, NOTES, TOOLS, SETTINGS
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,21 +46,19 @@ private fun NexusApp() {
     var dark by remember { mutableStateOf(false) }
     var sinhala by remember { mutableStateOf(true) }
     var tab by remember { mutableStateOf(Tab.CHAT) }
+
     val context = LocalContext.current
     val notes = remember { mutableStateListOf<String>() }
+
     var noteText by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
+
     val scope = rememberCoroutineScope()
 
     var chatMessages by remember {
         mutableStateOf(
-            listOf(
-                if (sinhala)
-                    "NEXUS AI වෙත සාදරයෙන් පිළිගනිමු."
-                else
-                    "Welcome to NEXUS AI."
-            )
+            listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු.")
         )
     }
 
@@ -65,11 +67,17 @@ private fun NexusApp() {
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
             val spoken = result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.getStringArrayListExtra(
+                    RecognizerIntent.EXTRA_RESULTS
+                )
                 ?.firstOrNull()
 
             if (!spoken.isNullOrBlank()) {
-                if (tab == Tab.NOTES) noteText = spoken else prompt = spoken
+                if (tab == Tab.NOTES) {
+                    noteText = spoken
+                } else {
+                    prompt = spoken
+                }
             }
         }
 
@@ -79,33 +87,52 @@ private fun NexusApp() {
         ) {
             Toast.makeText(
                 context,
-                if (sinhala) "Camera යෙදුමෙන් ආපසු පැමිණියා."
-                else "Returned from camera app.",
+                if (sinhala) {
+                    "Camera යෙදුමෙන් ආපසු පැමිණියා."
+                } else {
+                    "Returned from camera app."
+                },
                 Toast.LENGTH_SHORT
             ).show()
         }
 
     MaterialTheme(
-        colorScheme = if (dark) darkColorScheme() else lightColorScheme()
+        colorScheme = if (dark) {
+            darkColorScheme()
+        } else {
+            lightColorScheme()
+        }
     ) {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
                         Column {
-                            Text("NEXUS AI", fontWeight = FontWeight.Bold)
                             Text(
-                                if (sinhala) "ඔබේ පුද්ගලික සහායකයා"
-                                else "Your personal assistant",
+                                "NEXUS AI",
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Text(
+                                if (sinhala) {
+                                    "ඔබේ පුද්ගලික සහායකයා"
+                                } else {
+                                    "Your personal assistant"
+                                },
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
                     },
                     actions = {
-                        IconButton(onClick = { dark = !dark }) {
+                        IconButton(
+                            onClick = { dark = !dark }
+                        ) {
                             Icon(
-                                if (dark) Icons.Default.LightMode
-                                else Icons.Default.DarkMode,
+                                if (dark) {
+                                    Icons.Default.LightMode
+                                } else {
+                                    Icons.Default.DarkMode
+                                },
                                 contentDescription = "Theme"
                             )
                         }
@@ -117,72 +144,112 @@ private fun NexusApp() {
                     NavigationBarItem(
                         selected = tab == Tab.CHAT,
                         onClick = { tab = Tab.CHAT },
-                        icon = { Icon(Icons.Default.Chat, null) },
-                        label = { Text(if (sinhala) "චැට්" else "Chat") }
+                        icon = {
+                            Icon(Icons.Default.Chat, null)
+                        },
+                        label = {
+                            Text(if (sinhala) "චැට්" else "Chat")
+                        }
                     )
+
                     NavigationBarItem(
                         selected = tab == Tab.NOTES,
                         onClick = { tab = Tab.NOTES },
-                        icon = { Icon(Icons.Default.Notes, null) },
-                        label = { Text(if (sinhala) "සටහන්" else "Notes") }
+                        icon = {
+                            Icon(Icons.Default.Notes, null)
+                        },
+                        label = {
+                            Text(if (sinhala) "සටහන්" else "Notes")
+                        }
                     )
+
                     NavigationBarItem(
                         selected = tab == Tab.TOOLS,
                         onClick = { tab = Tab.TOOLS },
-                        icon = { Icon(Icons.Default.Build, null) },
-                        label = { Text(if (sinhala) "මෙවලම්" else "Tools") }
+                        icon = {
+                            Icon(Icons.Default.Build, null)
+                        },
+                        label = {
+                            Text(if (sinhala) "මෙවලම්" else "Tools")
+                        }
                     )
+
                     NavigationBarItem(
                         selected = tab == Tab.SETTINGS,
                         onClick = { tab = Tab.SETTINGS },
-                        icon = { Icon(Icons.Default.Settings, null) },
-                        label = { Text(if (sinhala) "සැකසුම්" else "Settings") }
+                        icon = {
+                            Icon(Icons.Default.Settings, null)
+                        },
+                        label = {
+                            Text(
+                                if (sinhala) "සැකසුම්" else "Settings"
+                            )
+                        }
                     )
                 }
             }
         ) { padding ->
+
             Column(
-                Modifier
+                modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(16.dp)
             ) {
                 when (tab) {
+
+                    // CHAT TAB
                     Tab.CHAT -> {
                         Card(
-                            Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(18.dp)
                         ) {
-                            Column(Modifier.padding(16.dp)) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
                                 Text(
-                                    if (sinhala) "AI සහායකයා" else "AI Assistant",
+                                    if (sinhala) {
+                                        "AI සහායකයා"
+                                    } else {
+                                        "AI Assistant"
+                                    },
                                     style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Spacer(Modifier.height(8.dp))
+
+                                Spacer(
+                                    modifier = Modifier.height(8.dp)
+                                )
+
                                 Text(
-                                    if (sinhala)
+                                    if (sinhala) {
                                         "ඔබේ පණිවිඩය යවා AI පිළිතුර ලබාගන්න."
-                                    else
+                                    } else {
                                         "Send a message to receive an AI reply."
+                                    }
                                 )
                             }
                         }
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(
+                            modifier = Modifier.height(12.dp)
+                        )
 
                         LazyColumn(
-                            Modifier
+                            modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
                         ) {
                             items(chatMessages) { message ->
                                 Card(
-                                    Modifier
+                                    modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
                                 ) {
-                                    Text(message, Modifier.padding(12.dp))
+                                    Text(
+                                        message,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
                                 }
                             }
                         }
@@ -192,19 +259,30 @@ private fun NexusApp() {
                             onValueChange = { prompt = it },
                             modifier = Modifier.fillMaxWidth(),
                             label = {
-                                Text(if (sinhala) "ඔබේ පණිවිඩය" else "Your message")
+                                Text(
+                                    if (sinhala) {
+                                        "ඔබේ පණිවිඩය"
+                                    } else {
+                                        "Your message"
+                                    }
+                                )
                             }
                         )
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             IconButton(
                                 onClick = {
                                     val intent =
-                                        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        Intent(
+                                            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                                        ).apply {
                                             putExtra(
                                                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                                                 RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                                             )
+
                                             putExtra(
                                                 RecognizerIntent.EXTRA_LANGUAGE,
                                                 if (sinhala) "si-LK" else "en-US"
@@ -216,25 +294,36 @@ private fun NexusApp() {
                                     } catch (_: ActivityNotFoundException) {
                                         Toast.makeText(
                                             context,
-                                            if (sinhala)
-                                                "Speech Recognition සේවාව ලබාගත නොහැක."
-                                            else
-                                                "Speech recognition is unavailable.",
+                                            if (sinhala) {
+                                                "හඬ හඳුනාගැනීමේ සේවාව ලබාගත නොහැක."
+                                            } else {
+                                                "Speech recognition is unavailable."
+                                            },
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
                                 }
                             ) {
-                                Icon(Icons.Default.Mic, contentDescription = "Voice")
+                                Icon(
+                                    Icons.Default.Mic,
+                                    contentDescription = "Voice"
+                                )
                             }
 
                             Button(
                                 onClick = {
                                     val message = prompt.trim()
 
-                                    if (message.isNotEmpty() && !isSending) {
+                                    if (
+                                        message.isNotEmpty() &&
+                                        !isSending
+                                    ) {
                                         chatMessages = chatMessages +
-                                            (if (sinhala) "ඔබ: $message" else "You: $message")
+                                            if (sinhala) {
+                                                "ඔබ: $message"
+                                            } else {
+                                                "You: $message"
+                                            }
 
                                         prompt = ""
                                         isSending = true
@@ -251,9 +340,15 @@ private fun NexusApp() {
                                                             as java.net.HttpURLConnection
 
                                                     try {
-                                                        connection.requestMethod = "POST"
-                                                        connection.connectTimeout = 15000
-                                                        connection.readTimeout = 60000
+                                                        connection.requestMethod =
+                                                            "POST"
+
+                                                        connection.connectTimeout =
+                                                            15000
+
+                                                        connection.readTimeout =
+                                                            60000
+
                                                         connection.doOutput = true
 
                                                         connection.setRequestProperty(
@@ -263,54 +358,75 @@ private fun NexusApp() {
 
                                                         val body =
                                                             org.json.JSONObject()
-                                                                .put("message", message)
+                                                                .put(
+                                                                    "message",
+                                                                    message
+                                                                )
                                                                 .toString()
 
                                                         connection.outputStream.use {
                                                             it.write(
-                                                                body.toByteArray(Charsets.UTF_8)
+                                                                body.toByteArray(
+                                                                    Charsets.UTF_8
+                                                                )
                                                             )
                                                         }
 
-                                                        val code = connection.responseCode
+                                                        val code =
+                                                            connection.responseCode
+
                                                         val stream =
-                                                            if (code in 200..299)
+                                                            if (code in 200..299) {
                                                                 connection.inputStream
-                                                            else
+                                                            } else {
                                                                 connection.errorStream
+                                                            }
 
                                                         val responseText =
                                                             stream
-                                                                ?.bufferedReader(Charsets.UTF_8)
-                                                                ?.use { it.readText() }
+                                                                ?.bufferedReader(
+                                                                    Charsets.UTF_8
+                                                                )
+                                                                ?.use {
+                                                                    it.readText()
+                                                                }
                                                                 .orEmpty()
 
                                                         val json =
-                                                            org.json.JSONObject(responseText)
+                                                            org.json.JSONObject(
+                                                                responseText
+                                                            )
 
                                                         if (code in 200..299) {
                                                             json.optString("reply")
-                                                                .takeIf { it.isNotBlank() }
-                                                                ?: if (sinhala)
+                                                                .takeIf {
+                                                                    it.isNotBlank()
+                                                                }
+                                                                ?: if (sinhala) {
                                                                     "AI පිළිතුරක් ලැබුණේ නැහැ."
-                                                                else
+                                                                } else {
                                                                     "The AI returned an empty reply."
+                                                                }
                                                         } else {
                                                             json.optString("error")
-                                                                .takeIf { it.isNotBlank() }
-                                                                ?: if (sinhala)
+                                                                .takeIf {
+                                                                    it.isNotBlank()
+                                                                }
+                                                                ?: if (sinhala) {
                                                                     "AI සේවාවට සම්බන්ධ වීමට නොහැකි වුණා."
-                                                                else
+                                                                } else {
                                                                     "Could not connect to the AI service."
+                                                                }
                                                         }
                                                     } finally {
                                                         connection.disconnect()
                                                     }
                                                 } catch (_: Exception) {
-                                                    if (sinhala)
+                                                    if (sinhala) {
                                                         "සම්බන්ධතාවයේ ගැටලුවක් ඇති වුණා. අන්තර්ජාලය පරීක්ෂා කරන්න."
-                                                    else
+                                                    } else {
                                                         "Connection failed. Check your internet."
+                                                    }
                                                 }
                                             }
 
@@ -324,17 +440,24 @@ private fun NexusApp() {
                             ) {
                                 Text(
                                     if (isSending) {
-                                        if (sinhala) "පිළිතුර ලැබෙමින්..."
-                                        else "Loading..."
+                                        if (sinhala) {
+                                            "පිළිතුර ලැබෙමින්..."
+                                        } else {
+                                            "Loading..."
+                                        }
                                     } else {
-                                        if (sinhala) "පණිවිඩය"
-                                        else "Send"
+                                        if (sinhala) {
+                                            "පණිවිඩය"
+                                        } else {
+                                            "Send"
+                                        }
                                     }
                                 )
                             }
                         }
                     }
 
+                    // NOTES TAB
                     Tab.NOTES -> {
                         Text(
                             if (sinhala) "මගේ සටහන්" else "My Notes",
@@ -347,7 +470,10 @@ private fun NexusApp() {
                             onValueChange = { noteText = it },
                             modifier = Modifier.fillMaxWidth(),
                             label = {
-                                Text(if (sinhala) "සටහන ලියන්න" else "Write a note")
+                                Text(
+                                    if (sinhala) "සටහන ලියන්න"
+                                    else "Write a note"
+                                )
                             }
                         )
 
@@ -360,48 +486,66 @@ private fun NexusApp() {
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(if (sinhala) "සටහන එක් කරන්න" else "Add note")
+                            Text(
+                                if (sinhala) "සටහන එක් කරන්න"
+                                else "Add note"
+                            )
                         }
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(
+                            modifier = Modifier.height(12.dp)
+                        )
 
                         Text(
-                            if (sinhala) "මෙම විවෘත සැසියේ සටහන්"
-                            else "Notes in this session"
+                            if (sinhala) {
+                                "මෙම විවෘත සැසියේ සටහන්"
+                            } else {
+                                "Notes in this session"
+                            }
                         )
 
                         LazyColumn {
                             items(notes) { note ->
                                 Card(
-                                    Modifier
+                                    modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
                                 ) {
-                                    Text(note, Modifier.padding(12.dp))
+                                    Text(
+                                        note,
+                                        modifier = Modifier.padding(12.dp)
+                                    )
                                 }
                             }
                         }
                     }
 
+                    // TOOLS TAB
                     Tab.TOOLS -> {
                         Text(
-                            if (sinhala) "දුරකථන මෙවලම්" else "Phone tools",
+                            if (sinhala) "දුරකථන මෙවලම්"
+                            else "Phone tools",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold
                         )
 
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(
+                            modifier = Modifier.height(12.dp)
+                        )
 
                         ToolButton(
-                            if (sinhala) "හඬින් ලියන්න" else "Voice input",
-                            Icons.Default.Mic
+                            label = if (sinhala) "හඬින් ලියන්න" else "Voice input",
+                            icon = Icons.Default.Mic
                         ) {
                             val intent =
-                                Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                Intent(
+                                    RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                                ).apply {
                                     putExtra(
                                         RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                                         RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                                     )
+
                                     putExtra(
                                         RecognizerIntent.EXTRA_LANGUAGE,
                                         if (sinhala) "si-LK" else "en-US"
@@ -420,8 +564,12 @@ private fun NexusApp() {
                         }
 
                         ToolButton(
-                            if (sinhala) "කැමරාව විවෘත කරන්න" else "Open camera",
-                            Icons.Default.CameraAlt
+                            label = if (sinhala) {
+                                "කැමරාව විවෘත කරන්න"
+                            } else {
+                                "Open camera"
+                            },
+                            icon = Icons.Default.CameraAlt
                         ) {
                             try {
                                 cameraLauncher.launch(
@@ -437,8 +585,12 @@ private fun NexusApp() {
                         }
 
                         ToolButton(
-                            if (sinhala) "දිනදර්ශන සිදුවීමක්" else "Calendar event",
-                            Icons.Default.CalendarMonth
+                            label = if (sinhala) {
+                                "දිනදර්ශන සිදුවීමක්"
+                            } else {
+                                "Calendar event"
+                            },
+                            icon = Icons.Default.CalendarMonth
                         ) {
                             Toast.makeText(
                                 context,
@@ -447,22 +599,29 @@ private fun NexusApp() {
                             ).show()
 
                             val startTime = System.currentTimeMillis()
-                            val endTime = startTime + 60 * 60 * 1000L
+                            val endTime =
+                                startTime + 60 * 60 * 1000L
 
                             val calendarIntent =
                                 Intent(Intent.ACTION_INSERT).apply {
-                                    setData(CalendarContract.Events.CONTENT_URI)
+                                    setData(
+                                        CalendarContract.Events.CONTENT_URI
+                                    )
+
                                     putExtra(
                                         CalendarContract.Events.TITLE,
-                                        if (sinhala)
+                                        if (sinhala) {
                                             "NEXUS AI සිදුවීම"
-                                        else
+                                        } else {
                                             "NEXUS AI event"
+                                        }
                                     )
+
                                     putExtra(
                                         CalendarContract.EXTRA_EVENT_BEGIN_TIME,
                                         startTime
                                     )
+
                                     putExtra(
                                         CalendarContract.EXTRA_EVENT_END_TIME,
                                         endTime
@@ -472,35 +631,42 @@ private fun NexusApp() {
                             try {
                                 val googleCalendarIntent =
                                     Intent(calendarIntent).apply {
-                                        setPackage("com.google.android.calendar")
+                                        setPackage(
+                                            "com.google.android.calendar"
+                                        )
                                     }
 
                                 try {
-                                    context.startActivity(googleCalendarIntent)
+                                    context.startActivity(
+                                        googleCalendarIntent
+                                    )
                                 } catch (_: ActivityNotFoundException) {
                                     context.startActivity(
                                         Intent.createChooser(
                                             calendarIntent,
-                                            if (sinhala)
+                                            if (sinhala) {
                                                 "දින දර්ශනය තෝරන්න"
-                                            else
+                                            } else {
                                                 "Choose calendar"
+                                            }
                                         )
                                     )
                                 }
                             } catch (e: Exception) {
                                 Toast.makeText(
                                     context,
-                                    if (sinhala)
+                                    if (sinhala) {
                                         "දිනදර්ශනය විවෘත කළ නොහැක: ${e.javaClass.simpleName}"
-                                    else
-                                        "Could not open calendar: ${e.javaClass.simpleName}",
+                                    } else {
+                                        "Could not open calendar: ${e.javaClass.simpleName}"
+                                    },
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
                         }
                     }
 
+                    // SETTINGS TAB
                     Tab.SETTINGS -> {
                         Text(
                             if (sinhala) "සැකසුම්" else "Settings",
@@ -509,13 +675,15 @@ private fun NexusApp() {
                         )
 
                         Row(
-                            Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                if (sinhala) "අඳුරු තේමාව" else "Dark theme",
-                                Modifier.weight(1f)
+                                if (sinhala) "අඳුරු තේමාව"
+                                else "Dark theme",
+                                modifier = Modifier.weight(1f)
                             )
+
                             Switch(
                                 checked = dark,
                                 onCheckedChange = { dark = it }
@@ -523,23 +691,83 @@ private fun NexusApp() {
                         }
 
                         Row(
-                            Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                if (sinhala) "සිංහල භාෂාව" else "Sinhala language",
-                                Modifier.weight(1f)
+                                if (sinhala) "සිංහල භාෂාව"
+                                else "Sinhala language",
+                                modifier = Modifier.weight(1f)
                             )
+
                             Switch(
                                 checked = sinhala,
                                 onCheckedChange = { sinhala = it }
                             )
                         }
 
-                        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
 
                         Text(
-                            if (sinhala) "යාවත්කාලීන මධ්‍යස්ථානය"
-                            else "Update Center",
+                            if (sinhala) {
+                                "යාවත්කාලීන මධ්‍යස්ථානය"
+                            } else {
+                                "Update Center"
+                            },
                             style = MaterialTheme.typography.titleMedium,
-                            font
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Text(
+                            if (sinhala) {
+                                "මෙය දැනට පෙන්වීමක් පමණි. සැබෑ update server එකක් සම්බන්ධ කර නැත."
+                            } else {
+                                "Display placeholder only. No update server is connected."
+                            }
+                        )
+
+                        Spacer(
+                            modifier = Modifier.height(12.dp)
+                        )
+
+                        Text(
+                            if (sinhala) {
+                                "අනුවාදය: 1.0.0 • AI backend: සම්බන්ධ කර නැත"
+                            } else {
+                                "Version: 1.0.0 • AI backend: not connected"
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = null
+        )
+
+        Spacer(
+            modifier = Modifier.width(10.dp)
+        )
+
+        Text(label)
+    }
+}
