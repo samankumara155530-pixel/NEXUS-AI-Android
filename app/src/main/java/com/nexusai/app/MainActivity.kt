@@ -453,7 +453,7 @@ private fun NexusApp() {
                                     putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
                                     putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
                                 }
-                                context.startActivity(intent)
+                                Toast.makeText(context, "Calendar button clicked!", Toast.LENGTH_LONG).show()
                             } catch (_: ActivityNotFoundException) {
                                 Toast.makeText(context, if (sinhala) "දිනදර්ශන යෙදුමක් සොයාගත නොහැක." else "No Calendar app found.", Toast.LENGTH_LONG).show()
                             }
