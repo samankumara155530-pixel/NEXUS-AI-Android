@@ -439,10 +439,32 @@ private fun NexusApp() {
                         Spacer(Modifier.height(16.dp))
 
                         ToolCard(
-                            title = if (sinhala) "දිනදර්ශනයට සිදුවීමක් එක් කරන්න" else "Add Calendar Event",
-                            description = if (sinhala) "ඔබේ දුරකථනයේ Calendar යෙදුම විවෘත කරන්න." else "Open your phone's Calendar app.",
-                            icon = Icons.Default.CalendarMonth
-                        ) {
+    title = if (sinhala) "දිනදර්ශනයට සිදුවීමක් එක් කරන්න" else "Add Calendar Event",
+    description = if (sinhala) "ඔබේ දුරකථනයේ Calendar යෙදුම විවෘත කරන්න." else "Open your phone's Calendar app.",
+    icon = Icons.Default.CalendarMonth
+) {
+    try {
+        val startMillis = System.currentTimeMillis() + 60 * 60 * 1000
+        val endMillis = startMillis + 60 * 60 * 1000
+
+        val intent = Intent(Intent.ACTION_INSERT).apply {
+            data = CalendarContract.Events.CONTENT_URI
+            putExtra(CalendarContract.Events.TITLE, if (sinhala) "NEXUS AI සිදුවීම" else "NEXUS AI Event")
+            putExtra(CalendarContract.Events.DESCRIPTION, if (sinhala) "NEXUS AI මඟින් එක් කරන ලදී." else "Added using NEXUS AI.")
+            putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+        }
+
+        context.startActivity(intent)
+
+    } catch (e: Exception) {
+        Toast.makeText(
+            context,
+            "Calendar Error: ${e.javaClass.simpleName} - ${e.message}",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+}
                             try {
                                 val startMillis = System.currentTimeMillis() + 60 * 60 * 1000
                                 val endMillis = startMillis + 60 * 60 * 1000
