@@ -276,7 +276,8 @@ private fun NexusApp() {
                                     }
                                 }
                             }
-                        }                        Spacer(Modifier.height(12.dp))
+                        }                        
+                        Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             value = prompt,
                             onValueChange = { prompt = it },
@@ -431,7 +432,8 @@ private fun NexusApp() {
                                 }
                             }
                         }
-                    }                    Tab.TOOLS -> {
+                    }                    Tab.TOOLS 
+                    -> {
                         Text(if (sinhala) "මෙවලම්" else "Tools", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(16.dp))
 
