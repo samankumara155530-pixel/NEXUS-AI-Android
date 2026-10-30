@@ -1,6 +1,9 @@
 package com.nexusai.app
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.speech.RecognizerIntent
@@ -14,7 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -29,8 +32,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 private val NexusNavy = Color(0xFF081326)
 private val NexusPanel = Color(0xFF111F38)
@@ -42,17 +50,38 @@ private val LightPanel = Color(0xFFFFFFFF)
 private val LightBlue = Color(0xFFE7F0FF)
 private val InkBlue = Color(0xFF142746)
 
+private const val PREFS_NAME = "nexus_local_data"
+private const val KEY_CHAT = "chat_messages"
+private const val KEY_NOTES = "notes"
+private const val KEY_SCRIPTS = "saved_scripts"
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            NexusApp()
-        }
+        setContent { NexusApp() }
     }
 }
 
-private enum class Tab {
-    CHAT, NOTES, TOOLS, SETTINGS
+private enum class Tab { CHAT, NOTES, SAVED, TOOLS, SETTINGS }
+
+private fun readStringList(context: Context, key: String, fallback: List<String> = emptyList()): List<String> {
+    return try {
+        val raw = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(key, null) ?: return fallback
+        val array = JSONArray(raw)
+        List(array.length()) { index -> array.optString(index) }
+    } catch (_: Exception) {
+        fallback
+    }
+}
+
+private fun writeStringList(context: Context, key: String, values: List<String>) {
+    val array = JSONArray()
+    values.forEach { array.put(it) }
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putString(key, array.toString())
+        .apply()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,61 +92,61 @@ private fun NexusApp() {
     var tab by remember { mutableStateOf(Tab.CHAT) }
 
     val context = LocalContext.current
-    val notes = remember { mutableStateListOf<String>() }
+    val prefs = remember(context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    val notes = remember {
+        mutableStateListOf<String>().apply {
+            addAll(readStringList(context, KEY_NOTES))
+        }
+    }
+    val savedScripts = remember {
+        mutableStateListOf<String>().apply {
+            addAll(readStringList(context, KEY_SCRIPTS))
+        }
+    }
     var noteText by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-
     var chatMessages by remember {
-        mutableStateOf(listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු."))
+        mutableStateOf(
+            readStringList(context, KEY_CHAT).ifEmpty {
+                listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු.")
+            }
+        )
     }
+
+    LaunchedEffect(chatMessages) { writeStringList(context, KEY_CHAT, chatMessages) }
+    LaunchedEffect(notes.toList()) { writeStringList(context, KEY_NOTES, notes.toList()) }
+    LaunchedEffect(savedScripts.toList()) { writeStringList(context, KEY_SCRIPTS, savedScripts.toList()) }
 
     val colors = if (dark) {
         darkColorScheme(
-            primary = NexusBlue,
-            onPrimary = Color.White,
-            secondary = NexusPurple,
-            onSecondary = Color.White,
-            tertiary = NexusCyan,
-            background = NexusNavy,
-            onBackground = Color(0xFFF1F5FF),
-            surface = NexusPanel,
-            onSurface = Color(0xFFF1F5FF),
-            surfaceVariant = Color(0xFF1B2B48),
-            onSurfaceVariant = Color(0xFFCAD7EF),
-            outline = Color(0xFF3B5276)
+            primary = NexusBlue, onPrimary = Color.White,
+            secondary = NexusPurple, onSecondary = Color.White,
+            tertiary = NexusCyan, background = NexusNavy,
+            onBackground = Color(0xFFF1F5FF), surface = NexusPanel,
+            onSurface = Color(0xFFF1F5FF), surfaceVariant = Color(0xFF1B2B48),
+            onSurfaceVariant = Color(0xFFCAD7EF), outline = Color(0xFF3B5276)
         )
     } else {
         lightColorScheme(
-            primary = Color(0xFF1769D2),
-            onPrimary = Color.White,
-            secondary = NexusPurple,
-            onSecondary = Color.White,
-            tertiary = Color(0xFF008DA8),
-            background = LightBackground,
-            onBackground = InkBlue,
-            surface = LightPanel,
-            onSurface = InkBlue,
-            surfaceVariant = LightBlue,
-            onSurfaceVariant = Color(0xFF405675),
+            primary = Color(0xFF1769D2), onPrimary = Color.White,
+            secondary = NexusPurple, onSecondary = Color.White,
+            tertiary = Color(0xFF008DA8), background = LightBackground,
+            onBackground = InkBlue, surface = LightPanel, onSurface = InkBlue,
+            surfaceVariant = LightBlue, onSurfaceVariant = Color(0xFF405675),
             outline = Color(0xFFB9C9E0)
         )
-    }
-
-    val voiceLauncher = rememberLauncherForActivityResult(
+    }    val voiceLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val spoken = result.data
             ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
             ?.firstOrNull()
-
         if (!spoken.isNullOrBlank()) {
-            if (tab == Tab.NOTES) {
-                noteText = spoken
-            } else {
-                prompt = spoken
-            }
+            if (tab == Tab.NOTES) noteText = spoken else prompt = spoken
         }
     }
 
@@ -126,651 +155,348 @@ private fun NexusApp() {
     ) {
         Toast.makeText(
             context,
-            if (sinhala) "Camera යෙදුමෙන් ආපසු පැමිණියා."
-            else "Returned from camera app.",
+            if (sinhala) "Camera යෙදුමෙන් ආපසු පැමිණියා." else "Returned from camera app.",
             Toast.LENGTH_SHORT
         ).show()
+    }
+
+    fun copyText(text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("NEXUS AI", text))
+        Toast.makeText(context, if (sinhala) "පිළිතුර Copy කළා." else "Copied.", Toast.LENGTH_SHORT).show()
+    }
+
+    fun saveScript(text: String) {
+        if (savedScripts.none { it == text }) {
+            savedScripts.add(0, text)
+            Toast.makeText(context, if (sinhala) "පිටපත සුරැකුවා." else "Script saved.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, if (sinhala) "මෙම පිටපත දැනටමත් සුරැකලා." else "Already saved.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     MaterialTheme(colorScheme = colors) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
-
             topBar = {
                 TopAppBar(
                     title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             NexusLogo(size = 42)
-
                             Column {
+                                Text("NEXUS AI", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
                                 Text(
-                                    "NEXUS AI",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    style = MaterialTheme.typography.titleLarge
-                                )
-
-                                Text(
-                                    if (sinhala) "ඔබේ පුද්ගලික සහායකයා"
-                                    else "Your personal assistant",
+                                    if (sinhala) "ඔබේ පුද්ගලික සහායකයා" else "Your personal assistant",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
                     },
-
                     actions = {
                         IconButton(onClick = { dark = !dark }) {
                             Icon(
-                                if (dark) Icons.Default.LightMode
-                                else Icons.Default.DarkMode,
+                                if (dark) Icons.Default.LightMode else Icons.Default.DarkMode,
                                 contentDescription = "Theme",
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     },
-
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                         titleContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             },
-
             bottomBar = {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ) {
-                    NavigationBarItem(
-                        selected = tab == Tab.CHAT,
-                        onClick = { tab = Tab.CHAT },
-                        icon = {
-                            Icon(Icons.Default.Chat, contentDescription = null)
-                        },
-                        label = {
-                            Text(if (sinhala) "චැට්" else "Chat")
-                        }
-                    )
-
-                    NavigationBarItem(
-                        selected = tab == Tab.NOTES,
-                        onClick = { tab = Tab.NOTES },
-                        icon = {
-                            Icon(Icons.Default.Notes, contentDescription = null)
-                        },
-                        label = {
-                            Text(if (sinhala) "සටහන්" else "Notes")
-                        }
-                    )
-
-                    NavigationBarItem(
-                        selected = tab == Tab.TOOLS,
-                        onClick = { tab = Tab.TOOLS },
-                        icon = {
-                            Icon(Icons.Default.Build, contentDescription = null)
-                        },
-                        label = {
-                            Text(if (sinhala) "මෙවලම්" else "Tools")
-                        }
-                    )
-
-                    NavigationBarItem(
-                        selected = tab == Tab.SETTINGS,
-                        onClick = { tab = Tab.SETTINGS },
-                        icon = {
-                            Icon(Icons.Default.Settings, contentDescription = null)
-                        },
-                        label = {
-                            Text(if (sinhala) "සැකසුම්" else "Settings")
-                        }
-                    )
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    NavigationBarItem(tab == Tab.CHAT, { tab = Tab.CHAT }, { Icon(Icons.Default.Chat, null) }, label = { Text(if (sinhala) "චැට්" else "Chat") })
+                    NavigationBarItem(tab == Tab.NOTES, { tab = Tab.NOTES }, { Icon(Icons.Default.Notes, null) }, label = { Text(if (sinhala) "සටහන්" else "Notes") })
+                    NavigationBarItem(tab == Tab.SAVED, { tab = Tab.SAVED }, { Icon(Icons.Default.Bookmark, null) }, label = { Text(if (sinhala) "සුරැකි" else "Saved") })
+                    NavigationBarItem(tab == Tab.TOOLS, { tab = Tab.TOOLS }, { Icon(Icons.Default.Build, null) }, label = { Text(if (sinhala) "මෙවලම්" else "Tools") })
+                    NavigationBarItem(tab == Tab.SETTINGS, { tab = Tab.SETTINGS }, { Icon(Icons.Default.Settings, null) }, label = { Text(if (sinhala) "සැකසුම්" else "Settings") })
                 }
             }
         ) { padding ->
-
             Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            if (dark) {
-                                listOf(
-                                    NexusNavy,
-                                    Color(0xFF0B1730),
-                                    NexusNavy
-                                )
-                            } else {
-                                listOf(
-                                    LightBackground,
-                                    Color(0xFFEAF2FF),
-                                    LightBackground
-                                )
-                            }
-                        )
-                    )
-                    .padding(padding)
-                    .padding(16.dp)
+                modifier = Modifier.fillMaxSize()
+                    .background(Brush.verticalGradient(if (dark) listOf(NexusNavy, Color(0xFF0B1730), NexusNavy) else listOf(LightBackground, Color(0xFFEAF2FF), LightBackground)))
+                    .padding(padding).padding(16.dp)
             ) {
-
                 when (tab) {
-
                     Tab.CHAT -> {
-
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            ),
-                            elevation = CardDefaults.cardElevation(
-                                defaultElevation = 3.dp
-                            )
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 NexusLogo(size = 50)
-
                                 Spacer(Modifier.width(12.dp))
-
                                 Column {
-                                    Text(
-                                        if (sinhala) "AI සහායකයා"
-                                        else "AI Assistant",
-                                        style = MaterialTheme.typography.titleLarge,
-                                        fontWeight = FontWeight.Bold
-                                    )
-
+                                    Text(if (sinhala) "AI සහායකයා" else "AI Assistant", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                     Spacer(Modifier.height(4.dp))
-
                                     Text(
-                                        if (sinhala) {
-                                            "ඔබේ පණිවිඩය යවා AI පිළිතුර ලබාගන්න."
-                                        } else {
-                                            "Send a message to receive an AI reply."
-                                        },
+                                        if (sinhala) "ඔබේ පණිවිඩය යවා AI පිළිතුර ලබාගන්න." else "Send a message to receive an AI reply.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
                         }
-
                         Spacer(Modifier.height(12.dp))
-
-                        LazyColumn(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                        ) {
-                            items(chatMessages) { message ->
+                        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            itemsIndexed(chatMessages) { index, message ->
+                                val isUserMessage = message.startsWith("ඔබ: ") || message.startsWith("You: ")
                                 Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                     shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    )
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Text(
-                                        text = message,
-                                        modifier = Modifier.padding(14.dp),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                                        Text(text = message, color = MaterialTheme.colorScheme.onSurface)
+                                        if (!isUserMessage && index != 0 && message.isNotBlank()) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                                horizontalArrangement = Arrangement.End
+                                            ) {
+                                                TextButton(onClick = { copyText(message) }) {
+                                                    Icon(Icons.Default.ContentCopy, null)
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(if (sinhala) "Copy" else "Copy")
+                                                }
+                                                TextButton(onClick = { saveScript(message) }) {
+                                                    Icon(Icons.Default.BookmarkAdd, null)
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(if (sinhala) "Save" else "Save")
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }
-
+                        }                        Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             value = prompt,
                             onValueChange = { prompt = it },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            label = {
-                                Text(
-                                    if (sinhala) "ඔබේ පණිවිඩය"
-                                    else "Your message"
-                                )
-                            }
-                        )
-
-                        Spacer(Modifier.height(6.dp))
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    val intent = Intent(
-                                        RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                                    ).apply {
-                                        putExtra(
-                                            RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                        )
-                                        putExtra(
-                                            RecognizerIntent.EXTRA_LANGUAGE,
-                                            if (sinhala) "si-LK" else "en-US"
-                                        )
-                                    }
-
+                            placeholder = { Text(if (sinhala) "ඔබේ පණිවිඩය මෙහි ලියන්න..." else "Type your message...") },
+                            shape = RoundedCornerShape(18.dp),
+                            trailingIcon = {
+                                IconButton(onClick = {
                                     try {
+                                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (sinhala) "si-LK" else "en-US")
+                                        }
                                         voiceLauncher.launch(intent)
                                     } catch (_: ActivityNotFoundException) {
-                                        Toast.makeText(
-                                            context,
-                                            if (sinhala) {
-                                                "හඬ හඳුනාගැනීමේ සේවාව ලබාගත නොහැක."
-                                            } else {
-                                                "Speech recognition is unavailable."
-                                            },
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                        Toast.makeText(context, if (sinhala) "Voice පහසුකම ලබාගත නොහැක." else "Voice input is unavailable.", Toast.LENGTH_LONG).show()
+                                    }
+                                }) {
+                                    Icon(Icons.Default.Mic, contentDescription = "Voice")
+                                }
+                            }
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                val userText = prompt.trim()
+                                if (userText.isNotEmpty() && !isSending) {
+                                    chatMessages = chatMessages + (if (sinhala) "ඔබ: " else "You: ") + userText
+                                    prompt = ""
+                                    isSending = true
+                                    scope.launch {
+                                        val reply = withContext(Dispatchers.IO) {
+                                            try {
+                                                val connection = (URL("https://nexus-ai-backend-six.vercel.app/chat").openConnection() as HttpURLConnection).apply {
+                                                    requestMethod = "POST"
+                                                    connectTimeout = 20000
+                                                    readTimeout = 30000
+                                                    doOutput = true
+                                                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                                                }
+                                                val body = JSONObject().put("message", userText).toString()
+                                                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                                                val responseCode = connection.responseCode
+                                                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                                                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                                connection.disconnect()
+                                                if (responseCode in 200..299) {
+                                                    val json = JSONObject(response)
+                                                    json.optString("reply", json.optString("response", response))
+                                                } else {
+                                                    "AI සේවාවෙන් දෝෂයක් ලැබුණා. ($responseCode)\n$response"
+                                                }
+                                            } catch (e: Exception) {
+                                                "AI සම්බන්ධතාවය අසාර්ථකයි: ${e.localizedMessage ?: "නොදන්නා දෝෂයක්"}"
+                                            }
+                                        }
+                                        chatMessages = chatMessages + reply
+                                        isSending = false
                                     }
                                 }
-                            ) {
-                                Icon(
-                                    Icons.Default.Mic,
-                                    contentDescription = "Voice",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-
-                            Button(
-                                onClick = {
-                                    val message = prompt.trim()
-
-                                    if (message.isNotEmpty() && !isSending) {
-                                        chatMessages = chatMessages + if (sinhala) {
-                                            "ඔබ: $message"
-                                        } else {
-                                            "You: $message"
-                                        }
-
-                                        prompt = ""
-                                        isSending = true
-
-                                        scope.launch {
-                                            val reply = withContext(
-                                                kotlinx.coroutines.Dispatchers.IO
-                                            ) {
-                                                try {
-                                                    val connection = java.net.URL(
-                                                        "https://nexus-ai-backend-six.vercel.app/chat"
-                                                    ).openConnection()
-                                                        as java.net.HttpURLConnection
-
-                                                    try {
-                                                        connection.requestMethod = "POST"
-                                                        connection.connectTimeout = 15000
-                                                        connection.readTimeout = 60000
-                                                        connection.doOutput = true
-
-                                                        connection.setRequestProperty(
-                                                            "Content-Type",
-                                                            "application/json; charset=utf-8"
-                                                        )
-
-                                                        val body = org.json.JSONObject()
-                                                            .put("message", message)
-                                                            .toString()
-
-                                                        connection.outputStream.use {
-                                                            it.write(
-                                                                body.toByteArray(Charsets.UTF_8)
-                                                            )
-                                                        }
-
-                                                        val code = connection.responseCode
-
-                                                        val stream = if (code in 200..299) {
-                                                            connection.inputStream
-                                                        } else {
-                                                            connection.errorStream
-                                                        }
-
-                                                        val responseText = stream
-                                                            ?.bufferedReader(Charsets.UTF_8)
-                                                            ?.use { it.readText() }
-                                                            .orEmpty()
-
-                                                        val json = org.json.JSONObject(
-                                                            responseText
-                                                        )
-
-                                                        if (code in 200..299) {
-                                                            json.optString("reply")
-                                                                .takeIf { it.isNotBlank() }
-                                                                ?: if (sinhala) {
-                                                                    "AI පිළිතුරක් ලැබුණේ නැහැ."
-                                                                } else {
-                                                                    "The AI returned an empty reply."
-                                                                }
-                                                        } else {
-                                                            json.optString("error")
-                                                                .takeIf { it.isNotBlank() }
-                                                                ?: if (sinhala) {
-                                                                    "AI සේවාවට සම්බන්ධ වීමට නොහැකි වුණා."
-                                                                } else {
-                                                                    "Could not connect to the AI service."
-                                                                }
-                                                        }
-                                                    } finally {
-                                                        connection.disconnect()
-                                                    }
-                                                } catch (_: Exception) {
-                                                    if (sinhala) {
-                                                        "සම්බන්ධතාවයේ ගැටලුවක් ඇති වුණා. අන්තර්ජාලය පරීක්ෂා කරන්න."
-                                                    } else {
-                                                        "Connection failed. Check your internet."
-                                                    }
-                                                }
-                                            }
-
-                                            chatMessages = chatMessages + reply
-                                            isSending = false
-                                        }
-                                    }
-                                },
-                                enabled = !isSending,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(14.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Send,
-                                    contentDescription = null
-                                )
-
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = prompt.isNotBlank() && !isSending,
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            if (isSending) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
                                 Spacer(Modifier.width(8.dp))
-
-                                Text(
-                                    if (isSending) {
-                                        if (sinhala) "පිළිතුර ලැබෙමින්..."
-                                        else "Loading..."
-                                    } else {
-                                        if (sinhala) "පණිවිඩය"
-                                        else "Send"
-                                    }
-                                )
                             }
+                            Icon(Icons.Default.Send, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "යවන්න" else "Send")
                         }
                     }
 
                     Tab.NOTES -> {
-
-                        SectionHeading(
-                            if (sinhala) "මගේ සටහන්" else "My Notes"
-                        )
-
+                        Text(if (sinhala) "මගේ සටහන්" else "My Notes", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             value = noteText,
                             onValueChange = { noteText = it },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            label = {
-                                Text(
-                                    if (sinhala) "සටහන ලියන්න"
-                                    else "Write a note"
-                                )
-                            }
+                            placeholder = { Text(if (sinhala) "සටහන මෙහි ලියන්න..." else "Write a note...") },
+                            minLines = 3,
+                            shape = RoundedCornerShape(16.dp)
                         )
-
-                        Spacer(Modifier.height(8.dp))
-
                         Button(
                             onClick = {
                                 if (noteText.isNotBlank()) {
-                                    notes.add(0, noteText)
+                                    notes.add(0, noteText.trim())
                                     noteText = ""
+                                    Toast.makeText(context, if (sinhala) "සටහන සුරැකුවා." else "Note saved.", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp)
+                            enabled = noteText.isNotBlank()
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null)
+                            Icon(Icons.Default.Save, null)
                             Spacer(Modifier.width(8.dp))
-                            Text(
-                                if (sinhala) "සටහන එක් කරන්න"
-                                else "Add note"
-                            )
+                            Text(if (sinhala) "සුරකින්න" else "Save Note")
                         }
-
                         Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            if (sinhala) "මෙම විවෘත සැසියේ සටහන්"
-                            else "Notes in this session",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        LazyColumn {
-                            items(notes) { note ->
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    )
-                                ) {
-                                    Text(
-                                        note,
-                                        modifier = Modifier.padding(14.dp)
-                                    )
+                        LazyColumn(Modifier.weight(1f)) {
+                            itemsIndexed(notes) { index, note ->
+                                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text(note)
+                                        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                            TextButton(onClick = { copyText(note) }) { Text(if (sinhala) "Copy" else "Copy") }
+                                            TextButton(onClick = { notes.removeAt(index) }) { Text(if (sinhala) "මකන්න" else "Delete") }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    Tab.TOOLS -> {
-
-                        SectionHeading(
-                            if (sinhala) "දුරකථන මෙවලම්"
-                            else "Phone tools"
-                        )
-
-                        Text(
-                            if (sinhala) {
-                                "දුරකථනයේ පහසුකම් ඉක්මනින් විවෘත කරන්න."
-                            } else {
-                                "Quick access to your phone tools."
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
+                    Tab.SAVED -> {
+                        Text(if (sinhala) "සුරැකි පිටපත්" else "Saved Scripts", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(12.dp))
-
-                        ToolButton(
-                            label = if (sinhala) "හඬින් ලියන්න" else "Voice input",
-                            icon = Icons.Default.Mic
-                        ) {
-                            val intent = Intent(
-                                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                            ).apply {
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                )
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE,
-                                    if (sinhala) "si-LK" else "en-US"
-                                )
+                        if (savedScripts.isEmpty()) {
+                            Text(if (sinhala) "තවමත් පිටපත් සුරැකී නැහැ." else "No saved scripts yet.")
+                        } else {
+                            LazyColumn(Modifier.weight(1f)) {
+                                itemsIndexed(savedScripts) { index, script ->
+                                    Card(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                                        Column(Modifier.padding(12.dp)) {
+                                            Text(script)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End
+                                            ) {
+                                                TextButton(onClick = { copyText(script) }) {
+                                                    Icon(Icons.Default.ContentCopy, null)
+                                                    Text("Copy")
+                                                }
+                                                TextButton(onClick = {
+                                                    notes.add(0, script)
+                                                    tab = Tab.NOTES
+                                                    Toast.makeText(context, if (sinhala) "සටහන් වෙත එක් කළා." else "Added to Notes.", Toast.LENGTH_SHORT).show()
+                                                }) {
+                                                    Text(if (sinhala) "සටහන් වෙත" else "To Notes")
+                                                }
+                                                TextButton(onClick = {
+                                                    savedScripts.removeAt(index)
+                                                }) {
+                                                    Text(if (sinhala) "මකන්න" else "Delete")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }                    Tab.TOOLS -> {
+                        Text(if (sinhala) "මෙවලම්" else "Tools", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(16.dp))
 
+                        ToolCard(
+                            title = if (sinhala) "දිනදර්ශනයට සිදුවීමක් එක් කරන්න" else "Add Calendar Event",
+                            description = if (sinhala) "ඔබේ දුරකථනයේ Calendar යෙදුම විවෘත කරන්න." else "Open your phone's Calendar app.",
+                            icon = Icons.Default.CalendarMonth
+                        ) {
                             try {
-                                voiceLauncher.launch(intent)
-                            } catch (_: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    "Speech recognition unavailable",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                val startMillis = System.currentTimeMillis() + 60 * 60 * 1000
+                                val endMillis = startMillis + 60 * 60 * 1000
+                                val intent = Intent(Intent.ACTION_INSERT).apply {
+                                    data = CalendarContract.Events.CONTENT_URI
+                                    putExtra(CalendarContract.Events.TITLE, if (sinhala) "NEXUS AI සිදුවීම" else "NEXUS AI Event")
+                                    putExtra(CalendarContract.Events.DESCRIPTION, if (sinhala) "NEXUS AI මඟින් එක් කරන ලදී." else "Added using NEXUS AI.")
+                                    putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+                                    putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+                                }
+                                context.startActivity(Intent.createChooser(intent, if (sinhala) "Calendar තෝරන්න" else "Choose Calendar"))
+                            } catch (_: ActivityNotFoundException) {
+                                Toast.makeText(context, if (sinhala) "දිනදර්ශන යෙදුමක් සොයාගත නොහැක." else "No Calendar app found.", Toast.LENGTH_LONG).show()
                             }
                         }
 
-                        ToolButton(
-                            label = if (sinhala) "කැමරාව විවෘත කරන්න"
-                            else "Open camera",
+                        ToolCard(
+                            title = if (sinhala) "Camera" else "Camera",
+                            description = if (sinhala) "දුරකථනයේ Camera යෙදුම විවෘත කරන්න." else "Open your phone's Camera app.",
                             icon = Icons.Default.CameraAlt
                         ) {
                             try {
-                                cameraLauncher.launch(
-                                    Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-                                )
-                            } catch (_: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    "Camera unavailable",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-
-                        ToolButton(
-                            label = if (sinhala) "දිනදර්ශන සිදුවීමක්"
-                            else "Calendar event",
-                            icon = Icons.Default.CalendarMonth
-                        ) {
-                            Toast.makeText(
-                                context,
-                                "Calendar button pressed",
-                                Toast.LENGTH_LONG
-                            ).show()
-
-                            val startTime = System.currentTimeMillis()
-                            val endTime = startTime + 60 * 60 * 1000L
-
-                            val calendarIntent = Intent(
-                                Intent.ACTION_INSERT
-                            ).apply {
-                                setData(CalendarContract.Events.CONTENT_URI)
-
-                                putExtra(
-                                    CalendarContract.Events.TITLE,
-                                    if (sinhala) "NEXUS AI සිදුවීම"
-                                    else "NEXUS AI event"
-                                )
-
-                                putExtra(
-                                    CalendarContract.EXTRA_EVENT_BEGIN_TIME,
-                                    startTime
-                                )
-
-                                putExtra(
-                                    CalendarContract.EXTRA_EVENT_END_TIME,
-                                    endTime
-                                )
-                            }
-
-                            try {
-                                val googleCalendarIntent =
-                                    Intent(calendarIntent).apply {
-                                        setPackage("com.google.android.calendar")
-                                    }
-
-                                try {
-                                    context.startActivity(googleCalendarIntent)
-                                } catch (_: ActivityNotFoundException) {
-                                    context.startActivity(
-                                        Intent.createChooser(
-                                            calendarIntent,
-                                            if (sinhala) "දින දර්ශනය තෝරන්න"
-                                            else "Choose calendar"
-                                        )
-                                    )
-                                }
-                            } catch (e: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    if (sinhala) {
-                                        "දිනදර්ශනය විවෘත කළ නොහැක: ${e.javaClass.simpleName}"
-                                    } else {
-                                        "Could not open calendar: ${e.javaClass.simpleName}"
-                                    },
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                cameraLauncher.launch(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
+                            } catch (_: ActivityNotFoundException) {
+                                Toast.makeText(context, if (sinhala) "Camera යෙදුම සොයාගත නොහැක." else "No Camera app found.", Toast.LENGTH_LONG).show()
                             }
                         }
                     }
 
                     Tab.SETTINGS -> {
-
-                        SectionHeading(
-                            if (sinhala) "සැකසුම්" else "Settings"
-                        )
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Column(
-                                Modifier.padding(
-                                    horizontal = 16.dp,
-                                    vertical = 8.dp
-                                )
-                            ) {
-                                SettingSwitchRow(
-                                    label = if (sinhala) "අඳුරු තේමාව"
-                                    else "Dark theme",
-                                    checked = dark,
-                                    onCheckedChange = { dark = it }
-                                )
-
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outline.copy(
-                                        alpha = 0.35f
-                                    )
-                                )
-
-                                SettingSwitchRow(
-                                    label = if (sinhala) "සිංහල භාෂාව"
-                                    else "Sinhala language",
-                                    checked = sinhala,
-                                    onCheckedChange = { sinhala = it }
+                        Text(if (sinhala) "සැකසුම්" else "Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(16.dp))
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text(if (sinhala) "භාෂාව" else "Language", fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("සිංහල")
+                                    Switch(checked = sinhala, onCheckedChange = { sinhala = it })
+                                    Text("English")
+                                }
+                                HorizontalDivider()
+                                Spacer(Modifier.height(12.dp))
+                                Text(if (sinhala) "පෙනුම" else "Appearance", fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (dark) "Dark" else "Light")
+                                    Switch(checked = dark, onCheckedChange = { dark = it })
+                                }
+                                HorizontalDivider()
+                                Spacer(Modifier.height(12.dp))
+                                Text(if (sinhala) "දත්ත ආරක්ෂාව" else "Data Storage", fontWeight = FontWeight.Bold)
+                                Text(
+                                    if (sinhala) "Chat, Notes සහ Saved Scripts ඔබගේ දුරකථනයේ පමණක් ගබඩා වේ. දැනට ඒවා Encryption කර නැත." else "Chat, Notes and Saved Scripts are stored locally on your phone. They are not encrypted yet.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-
-                        Spacer(Modifier.height(16.dp))
-
-                        Text(
-                            if (sinhala) "යාවත්කාලීන මධ්‍යස්ථානය"
-                            else "Update Center",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-
-                        Spacer(Modifier.height(6.dp))
-
-                        Text(
-                            if (sinhala) {
-                                "මෙය දැනට පෙන්වීමක් පමණි. සැබෑ update server එකක් සම්බන්ධ කර නැත."
-                            } else {
-                                "Display placeholder only. No update server is connected."
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Text(
-                            if (sinhala) {
-                                "අනුවාදය: 1.0.0 • AI backend: සම්බන්ධ කර නැත"
-                            } else {
-                                "Version: 1.0.0 • AI backend: not connected"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -781,100 +507,40 @@ private fun NexusApp() {
 @Composable
 private fun NexusLogo(size: Int) {
     Box(
-        modifier = Modifier
-            .size(size.dp)
-            .clip(RoundedCornerShape((size / 3).dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(NexusBlue, NexusPurple, NexusCyan)
-                )
-            ),
+        modifier = Modifier.size(size.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Brush.linearGradient(listOf(NexusBlue, NexusPurple))),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "N",
-            color = Color.White,
-            fontWeight = FontWeight.Black,
-            style = MaterialTheme.typography.headlineSmall
-        )
+        Text("N", color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.headlineMedium)
     }
 }
 
 @Composable
-private fun SectionHeading(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.ExtraBold,
-        color = MaterialTheme.colorScheme.onBackground
-    )
-
-    Spacer(Modifier.height(12.dp))
-}
-
-@Composable
-private fun SettingSwitchRow(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            label,
-            modifier = Modifier.weight(1f)
-        )
-
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange
-        )
-    }
-}
-
-@Composable
-private fun ToolButton(
-    label: String,
+private fun ToolCard(
+    title: String,
+    description: String,
     icon: ImageVector,
     onClick: () -> Unit
 ) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = MaterialTheme.colorScheme.primary
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-        ),
-        contentPadding = PaddingValues(
-            horizontal = 16.dp,
-            vertical = 14.dp
-        )
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label
-        )
-
-        Spacer(Modifier.width(12.dp))
-
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f)
-        )
-
-        Icon(
-            Icons.Default.ChevronRight,
-            contentDescription = null
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.Bold)
+                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onClick) {
+                Icon(Icons.Default.ArrowForward, contentDescription = "Open")
+            }
+        }
     }
 }
