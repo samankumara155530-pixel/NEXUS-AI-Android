@@ -483,8 +483,8 @@ private fun NexusApp() {
         Toast.LENGTH_LONG
     ).show()
 }
-}                            }
-                        }
+}                        
+                        
 
                         ToolCard(
                             title = if (sinhala) "Camera" else "Camera",
