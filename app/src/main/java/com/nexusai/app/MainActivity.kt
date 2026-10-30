@@ -139,7 +139,8 @@ private fun NexusApp() {
             surfaceVariant = LightBlue, onSurfaceVariant = Color(0xFF405675),
             outline = Color(0xFFB9C9E0)
         )
-    }    val voiceLauncher = rememberLauncherForActivityResult(
+    }    
+    val voiceLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val spoken = result.data
