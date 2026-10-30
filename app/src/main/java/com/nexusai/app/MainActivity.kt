@@ -457,7 +457,7 @@ private fun NexusApp() {
 
         context.startActivity(intent)
 
-    } catch (e: Exception) {
+        } catch (e: Exception) {
         Toast.makeText(
             context,
             "Calendar Error: ${e.javaClass.simpleName} - ${e.message}",
