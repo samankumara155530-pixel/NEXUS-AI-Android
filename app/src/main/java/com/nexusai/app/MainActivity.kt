@@ -483,7 +483,7 @@ private fun NexusApp() {
         Toast.LENGTH_LONG
     ).show()
 }
-                            }
+}                            }
                         }
 
                         ToolCard(
