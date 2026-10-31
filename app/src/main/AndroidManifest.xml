@@ -1,4 +1,5 @@
 
+
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
@@ -6,25 +7,20 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
-    <uses-permission
-        android:name="android.permission.INTERNET" />
-
     <queries>
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
         </intent>
-
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
-
         <intent>
             <action android:name="android.intent.action.INSERT" />
-            <data
-                android:scheme="content"
-                android:mimeType="vnd.android.cursor.dir/event" />
+            <data android:mimeType="vnd.android.cursor.item/event" />
         </intent>
     </queries>
+
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -35,12 +31,10 @@
         <activity
             android:name=".MainActivity"
             android:exported="true">
-
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
         </activity>
 
     </application>
