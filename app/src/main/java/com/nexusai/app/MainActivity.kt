@@ -439,11 +439,17 @@ private fun NexusApp() {
                         Spacer(Modifier.height(16.dp))
 
                                              
-                                                                        ToolCard(
+                                                                                                ToolCard(
                             title = if (sinhala) "දිනදර්ශනයට සිදුවීමක් එක් කරන්න" else "Add Calendar Event",
                             description = if (sinhala) "ඔබේ දුරකථනයේ Calendar යෙදුම විවෘත කරන්න." else "Open your phone's Calendar app.",
                             icon = Icons.Default.CalendarMonth
                         ) {
+                            Toast.makeText(
+                                context,
+                                "Calendar button clicked!",
+                                Toast.LENGTH_LONG
+                            ).show()
+
                             try {
                                 val startMillis =
                                     System.currentTimeMillis() + 60 * 60 * 1000
@@ -483,7 +489,7 @@ private fun NexusApp() {
                                 Toast.makeText(
                                     context,
                                     if (sinhala)
-                                        "ඔබගේ දුරකථනයේ Calendar යෙදුමක් සොයාගත නොහැක."
+                                        "Calendar යෙදුම සොයාගත නොහැක."
                                     else
                                         "No Calendar app found.",
                                     Toast.LENGTH_LONG
