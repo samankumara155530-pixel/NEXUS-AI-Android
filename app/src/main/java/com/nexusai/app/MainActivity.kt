@@ -439,11 +439,18 @@ private fun NexusApp() {
                         Spacer(Modifier.height(16.dp))
 
                                              
-                                                                                                ToolCard(
+                                                                                                
+ToolCard(
     title = if (sinhala) "දිනදර්ශනයට සිදුවීමක් එක් කරන්න" else "Add Calendar Event",
     description = if (sinhala) "ඔබේ දුරකථනයේ Calendar යෙදුම විවෘත කරන්න." else "Open your phone's Calendar app.",
     icon = Icons.Default.CalendarMonth
 ) {
+    Toast.makeText(
+        context,
+        "Calendar button clicked!",
+        Toast.LENGTH_SHORT
+    ).show()
+
     try {
         val startMillis =
             System.currentTimeMillis() + 60 * 60 * 1000
@@ -452,10 +459,7 @@ private fun NexusApp() {
             startMillis + 60 * 60 * 1000
 
         val intent = Intent(Intent.ACTION_INSERT).apply {
-            setDataAndType(
-                CalendarContract.Events.CONTENT_URI,
-                "vnd.android.cursor.item/event"
-            )
+            data = CalendarContract.Events.CONTENT_URI
 
             putExtra(
                 CalendarContract.Events.TITLE,
@@ -498,6 +502,7 @@ private fun NexusApp() {
         ).show()
     }
 }
+
 
                         ToolCard(
                             title = if (sinhala) "Camera" else "Camera",
