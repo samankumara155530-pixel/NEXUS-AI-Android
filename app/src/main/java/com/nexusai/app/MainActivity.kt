@@ -442,26 +442,18 @@ private fun NexusApp() {
                                                                                                 
 
 
+
 ToolCard(
     title = if (sinhala) "දිනදර්ශනයට සිදුවීමක් එක් කරන්න" else "Add Calendar Event",
     description = if (sinhala) "ඔබේ දුරකථනයේ Calendar යෙදුම විවෘත කරන්න." else "Open your phone's Calendar app.",
     icon = Icons.Default.CalendarMonth
 ) {
-    Toast.makeText(
-        context,
-        "NEXUS Calendar button clicked!",
-        Toast.LENGTH_LONG
-    ).show()
-
     try {
         val startMillis = System.currentTimeMillis() + 60 * 60 * 1000
         val endMillis = startMillis + 60 * 60 * 1000
 
         val intent = Intent(Intent.ACTION_INSERT).apply {
-            setDataAndType(
-                CalendarContract.Events.CONTENT_URI,
-                "vnd.android.cursor.item/event"
-            )
+            data = CalendarContract.Events.CONTENT_URI
 
             putExtra(
                 CalendarContract.Events.TITLE,
@@ -485,36 +477,25 @@ ToolCard(
             )
         }
 
-        val handlers = context.packageManager.queryIntentActivities(
-            intent,
-            android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
-        )
+        context.startActivity(intent)
 
-        if (handlers.isNotEmpty()) {
-            context.startActivity(
-                Intent.createChooser(
-                    intent,
-                    if (sinhala) "Calendar යෙදුම තෝරන්න"
-                    else "Choose Calendar App"
-                )
-            )
-        } else {
-            Toast.makeText(
-                context,
-                if (sinhala) "Calendar App එකක් සොයාගත නොහැක."
-                else "No compatible Calendar app found.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
+    } catch (e: ActivityNotFoundException) {
+        Toast.makeText(
+            context,
+            if (sinhala) "Calendar App එකක් සොයාගත නොහැක."
+            else "No Calendar app found.",
+            Toast.LENGTH_LONG
+        ).show()
 
     } catch (e: Exception) {
         Toast.makeText(
             context,
-            "Calendar Error: ${e.javaClass.simpleName}: ${e.message}",
+            "Calendar Error: ${e.message}",
             Toast.LENGTH_LONG
         ).show()
     }
 }
+
 
 
 
