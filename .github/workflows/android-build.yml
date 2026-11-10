@@ -1,4 +1,5 @@
 
+
 name: Build NEXUS AI APK
 
 on:
@@ -26,6 +27,17 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
+      - name: Install XML validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+
+      - name: Validate Android Manifest
+        run: |
+          echo "Checking AndroidManifest.xml..."
+          xmllint --noout app/src/main/AndroidManifest.xml
+          echo "Manifest XML is valid."
+
       - name: Install Android packages
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
@@ -34,13 +46,8 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Validate Android Manifest
-        run: |
-          echo "Checking AndroidManifest.xml..."
-          xmllint --noout app/src/main/AndroidManifest.xml
-
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace --info
+        run: gradle assembleDebug --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
