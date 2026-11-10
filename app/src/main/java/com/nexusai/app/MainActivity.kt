@@ -440,31 +440,25 @@ private fun NexusApp() {
 
                                              
                                                                                                 
+
 ToolCard(
     title = if (sinhala) "දිනදර්ශනයට සිදුවීමක් එක් කරන්න" else "Add Calendar Event",
     description = if (sinhala) "ඔබේ දුරකථනයේ Calendar යෙදුම විවෘත කරන්න." else "Open your phone's Calendar app.",
     icon = Icons.Default.CalendarMonth
 ) {
-    Toast.makeText(
-        context,
-        "Calendar button clicked!",
-        Toast.LENGTH_SHORT
-    ).show()
-
     try {
-        val startMillis =
-            System.currentTimeMillis() + 60 * 60 * 1000
-
-        val endMillis =
-            startMillis + 60 * 60 * 1000
+        val startMillis = System.currentTimeMillis() + 60 * 60 * 1000
+        val endMillis = startMillis + 60 * 60 * 1000
 
         val intent = Intent(Intent.ACTION_INSERT).apply {
-            data = CalendarContract.Events.CONTENT_URI
+            setDataAndType(
+                CalendarContract.Events.CONTENT_URI,
+                "vnd.android.cursor.item/event"
+            )
 
             putExtra(
                 CalendarContract.Events.TITLE,
-                if (sinhala) "NEXUS AI සිදුවීම"
-                else "NEXUS AI Event"
+                if (sinhala) "NEXUS AI සිදුවීම" else "NEXUS AI Event"
             )
 
             putExtra(
@@ -484,24 +478,37 @@ ToolCard(
             )
         }
 
-        context.startActivity(intent)
+        val handlers = context.packageManager.queryIntentActivities(
+            intent,
+            android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+        )
 
-    } catch (e: ActivityNotFoundException) {
-        Toast.makeText(
-            context,
-            if (sinhala) "Calendar යෙදුම සොයාගත නොහැක."
-            else "No Calendar app found.",
-            Toast.LENGTH_LONG
-        ).show()
+        if (handlers.isNotEmpty()) {
+            context.startActivity(
+                Intent.createChooser(
+                    intent,
+                    if (sinhala) "Calendar යෙදුම තෝරන්න"
+                    else "Choose Calendar App"
+                )
+            )
+        } else {
+            Toast.makeText(
+                context,
+                if (sinhala) "Calendar App එකක් සොයාගත නොහැක."
+                else "No compatible Calendar app found.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
 
     } catch (e: Exception) {
         Toast.makeText(
             context,
-            "Calendar Error: ${e.javaClass.simpleName} - ${e.message}",
+            "Calendar Error: ${e.javaClass.simpleName}: ${e.message}",
             Toast.LENGTH_LONG
         ).show()
     }
 }
+
 
 
                         ToolCard(
