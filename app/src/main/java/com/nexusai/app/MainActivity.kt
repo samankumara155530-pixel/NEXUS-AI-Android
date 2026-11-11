@@ -47,7 +47,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-// NEXUS AI COLOR SYSTEM
+// NEXUS AI COLORS
 
 private val NexusNavy = Color(0xFF070B1D)
 private val NexusPanel = Color(0xFF111A35)
@@ -62,7 +62,11 @@ private const val PREFS_NAME = "nexus_local_data"
 private const val KEY_CHAT = "chat_messages"
 private const val KEY_NOTES = "notes"
 private const val KEY_SCRIPTS = "saved_scripts"
+private const val KEY_MEMORIES = "nexus_smart_memories"
 private const val KEY_ALIAS = "NEXUS_AI_ENCRYPTION_KEY"
+
+private const val BACKEND_URL =
+    "https://nexus-ai-backend-six.vercel.app/chat"
 
 // MAIN ACTIVITY
 
@@ -75,7 +79,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// ENCRYPTION SYSTEM
+// ENCRYPTION
 
 private fun getEncryptionKey(): SecretKey {
     val keyStore = KeyStore.getInstance("AndroidKeyStore")
@@ -143,6 +147,8 @@ private fun decryptData(value: String): String {
     )
 }
 
+// ENCRYPTED LOCAL STORAGE
+
 private fun readStringList(
     context: Context,
     key: String,
@@ -161,6 +167,9 @@ private fun readStringList(
         List(array.length()) { array.optString(it) }
 
     } catch (_: Exception) {
+
+        // Migrate old unencrypted JSON without deleting it
+        // if encryption fails.
 
         try {
             val array = JSONArray(raw)
@@ -198,12 +207,17 @@ private fun writeStringList(
             .apply()
 
     } catch (_: Exception) {
-        // Preserve existing data if encryption fails.
+        // Existing saved data is not overwritten on failure.
     }
 }
 
 private enum class Tab {
-    CHAT, NOTES, SAVED, TOOLS, SETTINGS
+    CHAT,
+    NOTES,
+    SAVED,
+    MEMORY,
+    TOOLS,
+    SETTINGS
 }
 
 // MAIN APP
@@ -231,6 +245,17 @@ private fun NexusApp() {
         }
     }
 
+    val memories = remember {
+        mutableStateListOf<String>().apply {
+            addAll(readStringList(context, KEY_MEMORIES))
+        }
+    }
+
+    val pendingMemories = remember {
+        mutableStateListOf<String>()
+    }
+
+    var memoryText by remember { mutableStateOf("") }
     var noteText by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
@@ -259,6 +284,10 @@ private fun NexusApp() {
 
     LaunchedEffect(savedScripts.toList()) {
         writeStringList(context, KEY_SCRIPTS, savedScripts.toList())
+    }
+
+    LaunchedEffect(memories.toList()) {
+        writeStringList(context, KEY_MEMORIES, memories.toList())
     }
 
     val colors = if (dark) {
@@ -305,6 +334,8 @@ private fun NexusApp() {
         if (!spoken.isNullOrBlank()) {
             if (tab == Tab.NOTES) {
                 noteText = spoken
+            } else if (tab == Tab.MEMORY) {
+                memoryText = spoken
             } else {
                 prompt = spoken
             }
@@ -351,25 +382,59 @@ private fun NexusApp() {
         }
     }
 
+    fun suggestMemory(text: String) {
+        val clean = text
+            .removePrefix("ඔබ: ")
+            .removePrefix("You: ")
+            .trim()
+
+        if (clean.isNotBlank() &&
+            memories.none { it == clean } &&
+            pendingMemories.none { it == clean }
+        ) {
+            pendingMemories.add(clean)
+
+            Toast.makeText(
+                context,
+                if (sinhala)
+                    "මතක යෝජනාවක් සූදානම්. Memory Center එකෙන් අනුමත කරන්න."
+                else
+                    "Memory suggestion created. Approve it in Memory Center.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun approveMemory(text: String) {
+        if (memories.none { it == text }) {
+            memories.add(0, text)
+
+            Toast.makeText(
+                context,
+                if (sinhala) "මතකය ආරක්ෂිතව සුරැකුවා."
+                else "Memory saved securely.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        pendingMemories.remove(text)
+    }
+
     MaterialTheme(colorScheme = colors) {
 
         Scaffold(
             containerColor = Color.Transparent,
 
             topBar = {
-
                 TopAppBar(
                     title = {
-
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-
                             NexusLogo(46)
 
                             Column {
-
                                 Text(
                                     "NEXUS AI",
                                     fontWeight = FontWeight.Black,
@@ -389,9 +454,7 @@ private fun NexusApp() {
                     },
 
                     actions = {
-
                         IconButton(onClick = { dark = !dark }) {
-
                             Icon(
                                 if (dark)
                                     Icons.Default.LightMode
@@ -410,7 +473,6 @@ private fun NexusApp() {
             },
 
             bottomBar = {
-
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     tonalElevation = 8.dp
@@ -435,6 +497,13 @@ private fun NexusApp() {
                         onClick = { tab = Tab.SAVED },
                         icon = { Icon(Icons.Default.Bookmark, null) },
                         label = { Text(if (sinhala) "සුරැකි" else "Saved") }
+                    )
+
+                    NavigationBarItem(
+                        selected = tab == Tab.MEMORY,
+                        onClick = { tab = Tab.MEMORY },
+                        icon = { Icon(Icons.Default.Psychology, null) },
+                        label = { Text(if (sinhala) "මතකය" else "Memory") }
                     )
 
                     NavigationBarItem(
@@ -482,6 +551,8 @@ private fun NexusApp() {
 
                 when (tab) {
 
+                    // CHAT
+
                     Tab.CHAT -> {
 
                         Card(
@@ -492,21 +563,20 @@ private fun NexusApp() {
                             ),
                             elevation = CardDefaults.cardElevation(5.dp)
                         ) {
-
                             Row(
                                 Modifier.padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-
                                 NexusLogo(54)
 
                                 Spacer(Modifier.width(14.dp))
 
                                 Column {
-
                                     Text(
-                                        if (sinhala) "NEXUS සහායකයා"
-                                        else "NEXUS Assistant",
+                                        if (sinhala)
+                                            "NEXUS සහායකයා"
+                                        else
+                                            "NEXUS Assistant",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.titleLarge
                                     )
@@ -516,7 +586,6 @@ private fun NexusApp() {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-
                                         Box(
                                             Modifier
                                                 .size(8.dp)
@@ -527,8 +596,10 @@ private fun NexusApp() {
                                         Spacer(Modifier.width(6.dp))
 
                                         Text(
-                                            if (sinhala) "ඔබ වෙනුවෙන් සූදානම්"
-                                            else "Ready to assist",
+                                            if (sinhala)
+                                                "ඔබ වෙනුවෙන් සූදානම්"
+                                            else
+                                                "Ready to assist",
                                             color = NexusCyan,
                                             style = MaterialTheme.typography.bodySmall
                                         )
@@ -545,7 +616,6 @@ private fun NexusApp() {
                                 .fillMaxWidth(),
                             state = chatState
                         ) {
-
                             itemsIndexed(chatMessages) { index, message ->
 
                                 val isUser =
@@ -559,7 +629,6 @@ private fun NexusApp() {
                                     else
                                         Arrangement.Start
                                 ) {
-
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth(0.91f)
@@ -581,20 +650,45 @@ private fun NexusApp() {
 
                                         elevation = CardDefaults.cardElevation(2.dp)
                                     ) {
-
                                         Column(Modifier.padding(14.dp)) {
 
-                                            Text(message, color = Color.White)
+                                            Text(
+                                                message,
+                                                color = if (isUser || dark)
+                                                    Color.White
+                                                else
+                                                    InkBlue
+                                            )
 
-                                            if (!isUser && index != 0) {
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End
+                                            ) {
 
-                                                Row(
-                                                    Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.End
-                                                ) {
+                                                if (isUser) {
+                                                    TextButton(
+                                                        onClick = {
+                                                            suggestMemory(message)
+                                                        }
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.Lightbulb,
+                                                            null,
+                                                            tint = NexusCyan
+                                                        )
+                                                        Text(
+                                                            if (sinhala)
+                                                                "මතකයට යෝජනා කරන්න"
+                                                            else
+                                                                "Suggest Memory"
+                                                        )
+                                                    }
+                                                } else if (index != 0) {
 
                                                     TextButton(
-                                                        onClick = { copyText(message) }
+                                                        onClick = {
+                                                            copyText(message)
+                                                        }
                                                     ) {
                                                         Icon(
                                                             Icons.Default.ContentCopy,
@@ -605,14 +699,21 @@ private fun NexusApp() {
                                                     }
 
                                                     TextButton(
-                                                        onClick = { saveScript(message) }
+                                                        onClick = {
+                                                            saveScript(message)
+                                                        }
                                                     ) {
                                                         Icon(
                                                             Icons.Default.BookmarkAdd,
                                                             null,
                                                             tint = NexusCyan
                                                         )
-                                                        Text(if (sinhala) "සුරකින්න" else "Save")
+                                                        Text(
+                                                            if (sinhala)
+                                                                "සුරකින්න"
+                                                            else
+                                                                "Save"
+                                                        )
                                                     }
                                                 }
                                             }
@@ -638,9 +739,7 @@ private fun NexusApp() {
                             },
                             shape = RoundedCornerShape(20.dp),
                             trailingIcon = {
-
                                 IconButton(onClick = {
-
                                     try {
                                         val intent = Intent(
                                             RecognizerIntent.ACTION_RECOGNIZE_SPEECH
@@ -693,12 +792,13 @@ private fun NexusApp() {
 
                                         val reply = withContext(Dispatchers.IO) {
 
+                                            var connection: HttpURLConnection? = null
+
                                             try {
 
-                                                val connection =
-                                                    (URL(
-                                                        "https://nexus-ai-backend-six.vercel.app/chat"
-                                                    ).openConnection() as HttpURLConnection)
+                                                connection =
+                                                    (URL(BACKEND_URL)
+                                                        .openConnection() as HttpURLConnection)
                                                         .apply {
                                                             requestMethod = "POST"
                                                             connectTimeout = 20000
@@ -711,12 +811,56 @@ private fun NexusApp() {
                                                             )
                                                         }
 
+                                                // Send message + approved memories
+                                                // + last 12 conversation messages.
+
+                                                val memoryArray = JSONArray()
+
+                                                memories
+                                                    .take(30)
+                                                    .forEach {
+                                                        memoryArray.put(it.take(500))
+                                                    }
+
+                                                val historyArray = JSONArray()
+
+                                                chatMessages
+                                                    .takeLast(12)
+                                                    .forEach { item ->
+
+                                                        val isUser =
+                                                            item.startsWith("ඔබ: ") ||
+                                                            item.startsWith("You: ")
+
+                                                        val text = item
+                                                            .removePrefix("ඔබ: ")
+                                                            .removePrefix("You: ")
+
+                                                        historyArray.put(
+                                                            JSONObject()
+                                                                .put(
+                                                                    "role",
+                                                                    if (isUser)
+                                                                        "user"
+                                                                    else
+                                                                        "model"
+                                                                )
+                                                                .put("text", text)
+                                                        )
+                                                    }
+
                                                 val body = JSONObject()
                                                     .put("message", userText)
+                                                    .put("memory", memoryArray)
+                                                    .put("history", historyArray)
                                                     .toString()
 
                                                 connection.outputStream.use {
-                                                    it.write(body.toByteArray(Charsets.UTF_8))
+                                                    it.write(
+                                                        body.toByteArray(
+                                                            Charsets.UTF_8
+                                                        )
+                                                    )
                                                 }
 
                                                 val code = connection.responseCode
@@ -731,22 +875,31 @@ private fun NexusApp() {
                                                     ?.use { it.readText() }
                                                     .orEmpty()
 
-                                                connection.disconnect()
-
                                                 if (code in 200..299) {
+
                                                     val json = JSONObject(response)
 
                                                     json.optString(
                                                         "reply",
-                                                        json.optString("response", response)
+                                                        json.optString(
+                                                            "response",
+                                                            response
+                                                        )
                                                     )
+
                                                 } else {
+
                                                     "AI සේවාවේ දෝෂයක්: $code\n$response"
                                                 }
 
                                             } catch (e: Exception) {
+
                                                 "සම්බන්ධතාවය අසාර්ථකයි: " +
-                                                    (e.localizedMessage ?: "නොදන්නා දෝෂයක්")
+                                                    (e.localizedMessage
+                                                        ?: "නොදන්නා දෝෂයක්")
+
+                                            } finally {
+                                                connection?.disconnect()
                                             }
                                         }
 
@@ -783,9 +936,13 @@ private fun NexusApp() {
                         }
                     }
 
+                    // NOTES
+
                     Tab.NOTES -> {
 
-                        ScreenTitle(if (sinhala) "මගේ සටහන්" else "My Notes")
+                        ScreenTitle(
+                            if (sinhala) "මගේ සටහන්" else "My Notes"
+                        )
 
                         OutlinedTextField(
                             value = noteText,
@@ -823,7 +980,9 @@ private fun NexusApp() {
                         ) {
                             Icon(Icons.Default.Save, null)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (sinhala) "සුරකින්න" else "Save Note")
+                            Text(
+                                if (sinhala) "සුරකින්න" else "Save Note"
+                            )
                         }
 
                         Spacer(Modifier.height(12.dp))
@@ -851,9 +1010,14 @@ private fun NexusApp() {
                                             }
 
                                             TextButton(
-                                                onClick = { notes.removeAt(index) }
+                                                onClick = {
+                                                    notes.removeAt(index)
+                                                }
                                             ) {
-                                                Text(if (sinhala) "මකන්න" else "Delete")
+                                                Text(
+                                                    if (sinhala) "මකන්න"
+                                                    else "Delete"
+                                                )
                                             }
                                         }
                                     }
@@ -862,10 +1026,15 @@ private fun NexusApp() {
                         }
                     }
 
+                    // SAVED SCRIPTS
+
                     Tab.SAVED -> {
 
                         ScreenTitle(
-                            if (sinhala) "සුරැකි පිටපත්" else "Saved Scripts"
+                            if (sinhala)
+                                "සුරැකි පිටපත්"
+                            else
+                                "Saved Scripts"
                         )
 
                         if (savedScripts.isEmpty()) {
@@ -897,7 +1066,9 @@ private fun NexusApp() {
                                                 horizontalArrangement = Arrangement.End
                                             ) {
                                                 TextButton(
-                                                    onClick = { copyText(script) }
+                                                    onClick = {
+                                                        copyText(script)
+                                                    }
                                                 ) {
                                                     Text("Copy")
                                                 }
@@ -914,7 +1085,12 @@ private fun NexusApp() {
                                                         ).show()
                                                     }
                                                 ) {
-                                                    Text(if (sinhala) "සටහන්" else "To Notes")
+                                                    Text(
+                                                        if (sinhala)
+                                                            "සටහන්"
+                                                        else
+                                                            "To Notes"
+                                                    )
                                                 }
 
                                                 TextButton(
@@ -922,7 +1098,12 @@ private fun NexusApp() {
                                                         savedScripts.removeAt(index)
                                                     }
                                                 ) {
-                                                    Text(if (sinhala) "මකන්න" else "Delete")
+                                                    Text(
+                                                        if (sinhala)
+                                                            "මකන්න"
+                                                        else
+                                                            "Delete"
+                                                    )
                                                 }
                                             }
                                         }
@@ -932,24 +1113,323 @@ private fun NexusApp() {
                         }
                     }
 
+                    // SMART MEMORY CENTER
+
+                    Tab.MEMORY -> {
+
+                        ScreenTitle(
+                            if (sinhala)
+                                "NEXUS Smart Memory"
+                            else
+                                "NEXUS Smart Memory"
+                        )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(22.dp)
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Psychology,
+                                        null,
+                                        tint = NexusCyan,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+
+                                    Spacer(Modifier.width(10.dp))
+
+                                    Text(
+                                        if (sinhala)
+                                            "ඔබේ පුද්ගලික මතක මධ්‍යස්ථානය"
+                                        else
+                                            "Your Personal Memory Center",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+
+                                Text(
+                                    if (sinhala)
+                                        "ඔබ අනුමත කරන තොරතුරු පමණක් මතකයට සුරැකේ. ඒවා Chat අතරතුර AI වෙත යවනු ලැබේ."
+                                    else
+                                        "Only information you approve is saved. Approved memories are sent to the AI during chats.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+
+                                Spacer(Modifier.height(12.dp))
+
+                                OutlinedTextField(
+                                    value = memoryText,
+                                    onValueChange = { memoryText = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = {
+                                        Text(
+                                            if (sinhala)
+                                                "NEXUS මතක තබාගත යුතු දෙයක් ලියන්න..."
+                                            else
+                                                "Write something for NEXUS to remember..."
+                                        )
+                                    },
+                                    minLines = 2,
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+
+                                Spacer(Modifier.height(8.dp))
+
+                                Button(
+                                    onClick = {
+                                        val value = memoryText.trim()
+
+                                        if (value.isNotBlank()) {
+                                            if (memories.none { it == value }) {
+                                                memories.add(0, value)
+                                            }
+
+                                            memoryText = ""
+
+                                            Toast.makeText(
+                                                context,
+                                                if (sinhala)
+                                                    "මතකයට සුරැකුවා."
+                                                else
+                                                    "Memory saved.",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    enabled = memoryText.isNotBlank(),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Add, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        if (sinhala)
+                                            "මතකයට සුරකින්න"
+                                        else
+                                            "Save Memory"
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+
+                        if (pendingMemories.isNotEmpty()) {
+
+                            Text(
+                                if (sinhala)
+                                    "අනුමැතිය බලාපොරොත්තු වන යෝජනා"
+                                else
+                                    "Pending Memory Suggestions",
+                                fontWeight = FontWeight.Bold,
+                                color = NexusCyan
+                            )
+
+                            Spacer(Modifier.height(6.dp))
+
+                            LazyColumn(
+                                modifier = Modifier.heightIn(max = 220.dp)
+                            ) {
+                                itemsIndexed(
+                                    pendingMemories.toList()
+                                ) { index, suggestion ->
+
+                                    Card(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        shape = RoundedCornerShape(16.dp)
+                                    ) {
+                                        Column(Modifier.padding(12.dp)) {
+
+                                            Text(suggestion)
+
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End
+                                            ) {
+                                                TextButton(
+                                                    onClick = {
+                                                        pendingMemories.remove(suggestion)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        if (sinhala)
+                                                            "ප්‍රතික්ෂේප කරන්න"
+                                                        else
+                                                            "Reject"
+                                                    )
+                                                }
+
+                                                TextButton(
+                                                    onClick = {
+                                                        approveMemory(suggestion)
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.CheckCircle,
+                                                        null,
+                                                        tint = Color(0xFF39D98A)
+                                                    )
+
+                                                    Text(
+                                                        if (sinhala)
+                                                            "අනුමත කරන්න"
+                                                        else
+                                                            "Approve"
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (sinhala)
+                                    "සුරැකි මතකයන්"
+                                else
+                                    "Saved Memories",
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Spacer(Modifier.weight(1f))
+
+                            Text(
+                                "${memories.size}/30",
+                                color = NexusCyan
+                            )
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        if (memories.isEmpty()) {
+
+                            EmptyState(
+                                Icons.Default.Psychology,
+                                if (sinhala)
+                                    "තවමත් මතකයන් නැහැ."
+                                else
+                                    "No memories saved yet."
+                            )
+
+                        } else {
+
+                            LazyColumn(Modifier.weight(1f)) {
+                                itemsIndexed(memories.toList()) { index, memory ->
+
+                                    Card(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 5.dp),
+                                        shape = RoundedCornerShape(17.dp)
+                                    ) {
+                                        Column(Modifier.padding(13.dp)) {
+
+                                            Row(
+                                                verticalAlignment = Alignment.Top
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Lightbulb,
+                                                    null,
+                                                    tint = NexusCyan
+                                                )
+
+                                                Spacer(Modifier.width(8.dp))
+
+                                                Text(
+                                                    memory,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End
+                                            ) {
+                                                TextButton(
+                                                    onClick = {
+                                                        copyText(memory)
+                                                    }
+                                                ) {
+                                                    Text("Copy")
+                                                }
+
+                                                TextButton(
+                                                    onClick = {
+                                                        memoryText = memory
+                                                        memories.removeAt(index)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        if (sinhala)
+                                                            "සංස්කරණය"
+                                                        else
+                                                            "Edit"
+                                                    )
+                                                }
+
+                                                TextButton(
+                                                    onClick = {
+                                                        memories.removeAt(index)
+                                                    }
+                                                ) {
+                                                    Text(
+                                                        if (sinhala)
+                                                            "මකන්න"
+                                                        else
+                                                            "Delete"
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // TOOLS
+
                     Tab.TOOLS -> {
 
                         ScreenTitle(
-                            if (sinhala) "NEXUS මෙවලම්" else "NEXUS Tools"
+                            if (sinhala)
+                                "NEXUS මෙවලම්"
+                            else
+                                "NEXUS Tools"
                         )
 
                         ToolCard(
-                            title = if (sinhala) "දිනදර්ශනය" else "Calendar",
+                            title = if (sinhala)
+                                "දිනදර්ශනය"
+                            else
+                                "Calendar",
+
                             description = if (sinhala)
                                 "දුරකථනයේ Calendar යෙදුම විවෘත කරන්න."
                             else
                                 "Open your phone's Calendar.",
+
                             icon = Icons.Default.CalendarMonth
                         ) {
 
                             try {
                                 val start =
-                                    System.currentTimeMillis() + 60 * 60 * 1000
+                                    System.currentTimeMillis() +
+                                        60 * 60 * 1000
 
                                 val end = start + 60 * 60 * 1000
 
@@ -996,6 +1476,7 @@ private fun NexusApp() {
                                 "දුරකථනයේ Camera යෙදුම විවෘත කරන්න."
                             else
                                 "Open your phone's Camera.",
+
                             icon = Icons.Default.CameraAlt
                         ) {
 
@@ -1013,10 +1494,15 @@ private fun NexusApp() {
                         }
                     }
 
+                    // SETTINGS
+
                     Tab.SETTINGS -> {
 
                         ScreenTitle(
-                            if (sinhala) "NEXUS සැකසුම්" else "NEXUS Settings"
+                            if (sinhala)
+                                "NEXUS සැකසුම්"
+                            else
+                                "NEXUS Settings"
                         )
 
                         Card(
@@ -1034,9 +1520,14 @@ private fun NexusApp() {
                                         null,
                                         tint = NexusCyan
                                     )
+
                                     Spacer(Modifier.width(10.dp))
+
                                     Text(
-                                        if (sinhala) "භාෂාව" else "Language",
+                                        if (sinhala)
+                                            "භාෂාව"
+                                        else
+                                            "Language",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1067,9 +1558,14 @@ private fun NexusApp() {
                                         null,
                                         tint = NexusCyan
                                     )
+
                                     Spacer(Modifier.width(10.dp))
+
                                     Text(
-                                        if (sinhala) "පෙනුම" else "Appearance",
+                                        if (sinhala)
+                                            "පෙනුම"
+                                        else
+                                            "Appearance",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1077,7 +1573,13 @@ private fun NexusApp() {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(if (dark) "Dark Mode" else "Light Mode")
+                                    Text(
+                                        if (dark)
+                                            "Dark Mode"
+                                        else
+                                            "Light Mode"
+                                    )
+
                                     Spacer(Modifier.weight(1f))
 
                                     Switch(
@@ -1097,9 +1599,14 @@ private fun NexusApp() {
                                         null,
                                         tint = NexusCyan
                                     )
+
                                     Spacer(Modifier.width(10.dp))
+
                                     Text(
-                                        if (sinhala) "දත්ත ආරක්ෂාව" else "Data Security",
+                                        if (sinhala)
+                                            "දත්ත ආරක්ෂාව"
+                                        else
+                                            "Data Security",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1108,10 +1615,12 @@ private fun NexusApp() {
 
                                 Text(
                                     if (sinhala)
-                                        "Chat, Notes සහ Saved Scripts AES-256-GCM Encryption මඟින් ආරක්ෂා කර ඇත. Encryption Key එක Android Keystore තුළ ගබඩා වේ."
+                                        "Chat, Notes, Saved Scripts සහ Smart Memories AES-256-GCM Encryption මඟින් ආරක්ෂා කර ඇත. Encryption Key එක Android Keystore තුළ ගබඩා වේ."
                                     else
-                                        "Chat, Notes and Saved Scripts are protected using AES-256-GCM encryption. The encryption key is stored in Android Keystore.",
+                                        "Chat, Notes, Saved Scripts and Smart Memories use AES-256-GCM encryption. The encryption key is stored in Android Keystore.",
+
                                     style = MaterialTheme.typography.bodyMedium,
+
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
 
@@ -1233,7 +1742,7 @@ private fun EmptyState(
     }
 }
 
-// UPDATED TOOL CARD: ENTIRE CARD IS CLICKABLE
+// CLICKABLE TOOL CARD
 
 @Composable
 private fun ToolCard(
