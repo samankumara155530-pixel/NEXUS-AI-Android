@@ -162,8 +162,6 @@ private fun readStringList(
 
     } catch (_: Exception) {
 
-        // Migrate old unencrypted data.
-
         try {
             val array = JSONArray(raw)
 
@@ -251,9 +249,7 @@ private fun NexusApp() {
         writeStringList(context, KEY_CHAT, chatMessages)
 
         if (chatMessages.isNotEmpty()) {
-            chatState.animateScrollToItem(
-                chatMessages.lastIndex
-            )
+            chatState.animateScrollToItem(chatMessages.lastIndex)
         }
     }
 
@@ -262,11 +258,7 @@ private fun NexusApp() {
     }
 
     LaunchedEffect(savedScripts.toList()) {
-        writeStringList(
-            context,
-            KEY_SCRIPTS,
-            savedScripts.toList()
-        )
+        writeStringList(context, KEY_SCRIPTS, savedScripts.toList())
     }
 
     val colors = if (dark) {
@@ -389,7 +381,6 @@ private fun NexusApp() {
                                         "ඔබේ පුද්ගලික AI සහායකයා"
                                     else
                                         "Your Personal AI Assistant",
-
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -399,16 +390,13 @@ private fun NexusApp() {
 
                     actions = {
 
-                        IconButton(
-                            onClick = { dark = !dark }
-                        ) {
+                        IconButton(onClick = { dark = !dark }) {
 
                             Icon(
                                 if (dark)
                                     Icons.Default.LightMode
                                 else
                                     Icons.Default.DarkMode,
-
                                 contentDescription = "Theme",
                                 tint = NexusCyan
                             )
@@ -431,56 +419,36 @@ private fun NexusApp() {
                     NavigationBarItem(
                         selected = tab == Tab.CHAT,
                         onClick = { tab = Tab.CHAT },
-                        icon = {
-                            Icon(Icons.Default.Chat, null)
-                        },
-                        label = {
-                            Text(if (sinhala) "චැට්" else "Chat")
-                        }
+                        icon = { Icon(Icons.Default.Chat, null) },
+                        label = { Text(if (sinhala) "චැට්" else "Chat") }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.NOTES,
                         onClick = { tab = Tab.NOTES },
-                        icon = {
-                            Icon(Icons.Default.Notes, null)
-                        },
-                        label = {
-                            Text(if (sinhala) "සටහන්" else "Notes")
-                        }
+                        icon = { Icon(Icons.Default.Notes, null) },
+                        label = { Text(if (sinhala) "සටහන්" else "Notes") }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.SAVED,
                         onClick = { tab = Tab.SAVED },
-                        icon = {
-                            Icon(Icons.Default.Bookmark, null)
-                        },
-                        label = {
-                            Text(if (sinhala) "සුරැකි" else "Saved")
-                        }
+                        icon = { Icon(Icons.Default.Bookmark, null) },
+                        label = { Text(if (sinhala) "සුරැකි" else "Saved") }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.TOOLS,
                         onClick = { tab = Tab.TOOLS },
-                        icon = {
-                            Icon(Icons.Default.Build, null)
-                        },
-                        label = {
-                            Text(if (sinhala) "මෙවලම්" else "Tools")
-                        }
+                        icon = { Icon(Icons.Default.Build, null) },
+                        label = { Text(if (sinhala) "මෙවලම්" else "Tools") }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.SETTINGS,
                         onClick = { tab = Tab.SETTINGS },
-                        icon = {
-                            Icon(Icons.Default.Settings, null)
-                        },
-                        label = {
-                            Text(if (sinhala) "සැකසුම්" else "Settings")
-                        }
+                        icon = { Icon(Icons.Default.Settings, null) },
+                        label = { Text(if (sinhala) "සැකසුම්" else "Settings") }
                     )
                 }
             }
@@ -514,8 +482,6 @@ private fun NexusApp() {
 
                 when (tab) {
 
-                    // CHAT SCREEN
-
                     Tab.CHAT -> {
 
                         Card(
@@ -539,11 +505,8 @@ private fun NexusApp() {
                                 Column {
 
                                     Text(
-                                        if (sinhala)
-                                            "NEXUS සහායකයා"
-                                        else
-                                            "NEXUS Assistant",
-
+                                        if (sinhala) "NEXUS සහායකයා"
+                                        else "NEXUS Assistant",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.titleLarge
                                     )
@@ -564,11 +527,8 @@ private fun NexusApp() {
                                         Spacer(Modifier.width(6.dp))
 
                                         Text(
-                                            if (sinhala)
-                                                "ඔබ වෙනුවෙන් සූදානම්"
-                                            else
-                                                "Ready to assist",
-
+                                            if (sinhala) "ඔබ වෙනුවෙන් සූදානම්"
+                                            else "Ready to assist",
                                             color = NexusCyan,
                                             style = MaterialTheme.typography.bodySmall
                                         )
@@ -622,14 +582,9 @@ private fun NexusApp() {
                                         elevation = CardDefaults.cardElevation(2.dp)
                                     ) {
 
-                                        Column(
-                                            Modifier.padding(14.dp)
-                                        ) {
+                                        Column(Modifier.padding(14.dp)) {
 
-                                            Text(
-                                                message,
-                                                color = Color.White
-                                            )
+                                            Text(message, color = Color.White)
 
                                             if (!isUser && index != 0) {
 
@@ -639,36 +594,25 @@ private fun NexusApp() {
                                                 ) {
 
                                                     TextButton(
-                                                        onClick = {
-                                                            copyText(message)
-                                                        }
+                                                        onClick = { copyText(message) }
                                                     ) {
-
                                                         Icon(
                                                             Icons.Default.ContentCopy,
                                                             null,
                                                             tint = NexusCyan
                                                         )
-
                                                         Text("Copy")
                                                     }
 
                                                     TextButton(
-                                                        onClick = {
-                                                            saveScript(message)
-                                                        }
+                                                        onClick = { saveScript(message) }
                                                     ) {
-
                                                         Icon(
                                                             Icons.Default.BookmarkAdd,
                                                             null,
                                                             tint = NexusCyan
                                                         )
-
-                                                        Text(
-                                                            if (sinhala) "සුරකින්න"
-                                                            else "Save"
-                                                        )
+                                                        Text(if (sinhala) "සුරකින්න" else "Save")
                                                     }
                                                 }
                                             }
@@ -695,39 +639,32 @@ private fun NexusApp() {
                             shape = RoundedCornerShape(20.dp),
                             trailingIcon = {
 
-                                IconButton(
-                                    onClick = {
+                                IconButton(onClick = {
 
-                                        try {
-
-                                            val intent = Intent(
-                                                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                                            ).apply {
-
-                                                putExtra(
-                                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                                )
-
-                                                putExtra(
-                                                    RecognizerIntent.EXTRA_LANGUAGE,
-                                                    if (sinhala) "si-LK" else "en-US"
-                                                )
-                                            }
-
-                                            voiceLauncher.launch(intent)
-
-                                        } catch (_: Exception) {
-
-                                            Toast.makeText(
-                                                context,
-                                                "Voice input unavailable.",
-                                                Toast.LENGTH_LONG
-                                            ).show()
+                                    try {
+                                        val intent = Intent(
+                                            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                                        ).apply {
+                                            putExtra(
+                                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                            )
+                                            putExtra(
+                                                RecognizerIntent.EXTRA_LANGUAGE,
+                                                if (sinhala) "si-LK" else "en-US"
+                                            )
                                         }
-                                    }
-                                ) {
 
+                                        voiceLauncher.launch(intent)
+
+                                    } catch (_: Exception) {
+                                        Toast.makeText(
+                                            context,
+                                            "Voice input unavailable.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }) {
                                     Icon(
                                         Icons.Default.Mic,
                                         null,
@@ -746,8 +683,6 @@ private fun NexusApp() {
 
                                 if (userText.isNotEmpty() && !isSending) {
 
-                                    // Keep each message as one list item.
-
                                     chatMessages = chatMessages +
                                         ((if (sinhala) "ඔබ: " else "You: ") + userText)
 
@@ -765,7 +700,6 @@ private fun NexusApp() {
                                                         "https://nexus-ai-backend-six.vercel.app/chat"
                                                     ).openConnection() as HttpURLConnection)
                                                         .apply {
-
                                                             requestMethod = "POST"
                                                             connectTimeout = 20000
                                                             readTimeout = 30000
@@ -782,9 +716,7 @@ private fun NexusApp() {
                                                     .toString()
 
                                                 connection.outputStream.use {
-                                                    it.write(
-                                                        body.toByteArray(Charsets.UTF_8)
-                                                    )
+                                                    it.write(body.toByteArray(Charsets.UTF_8))
                                                 }
 
                                                 val code = connection.responseCode
@@ -802,27 +734,19 @@ private fun NexusApp() {
                                                 connection.disconnect()
 
                                                 if (code in 200..299) {
-
                                                     val json = JSONObject(response)
 
                                                     json.optString(
                                                         "reply",
-                                                        json.optString(
-                                                            "response",
-                                                            response
-                                                        )
+                                                        json.optString("response", response)
                                                     )
-
                                                 } else {
-
                                                     "AI සේවාවේ දෝෂයක්: $code\n$response"
                                                 }
 
                                             } catch (e: Exception) {
-
                                                 "සම්බන්ධතාවය අසාර්ථකයි: " +
-                                                    (e.localizedMessage
-                                                        ?: "නොදන්නා දෝෂයක්")
+                                                    (e.localizedMessage ?: "නොදන්නා දෝෂයක්")
                                             }
                                         }
 
@@ -841,13 +765,11 @@ private fun NexusApp() {
                         ) {
 
                             if (isSending) {
-
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     strokeWidth = 2.dp,
                                     color = Color.White
                                 )
-
                                 Spacer(Modifier.width(8.dp))
                             }
 
@@ -861,14 +783,9 @@ private fun NexusApp() {
                         }
                     }
 
-                    // NOTES SCREEN
-
                     Tab.NOTES -> {
 
-                        ScreenTitle(
-                            if (sinhala) "මගේ සටහන්"
-                            else "My Notes"
-                        )
+                        ScreenTitle(if (sinhala) "මගේ සටහන්" else "My Notes")
 
                         OutlinedTextField(
                             value = noteText,
@@ -890,9 +807,7 @@ private fun NexusApp() {
 
                         Button(
                             onClick = {
-
                                 if (noteText.isNotBlank()) {
-
                                     notes.add(0, noteText.trim())
                                     noteText = ""
 
@@ -903,64 +818,42 @@ private fun NexusApp() {
                                     ).show()
                                 }
                             },
-
                             modifier = Modifier.fillMaxWidth(),
                             enabled = noteText.isNotBlank()
                         ) {
-
                             Icon(Icons.Default.Save, null)
                             Spacer(Modifier.width(8.dp))
-
-                            Text(
-                                if (sinhala) "සුරකින්න"
-                                else "Save Note"
-                            )
+                            Text(if (sinhala) "සුරකින්න" else "Save Note")
                         }
 
                         Spacer(Modifier.height(12.dp))
 
-                        LazyColumn(
-                            Modifier.weight(1f)
-                        ) {
-
+                        LazyColumn(Modifier.weight(1f)) {
                             itemsIndexed(notes) { index, note ->
 
                                 Card(
                                     Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 5.dp),
-
                                     shape = RoundedCornerShape(18.dp)
                                 ) {
-
-                                    Column(
-                                        Modifier.padding(14.dp)
-                                    ) {
-
+                                    Column(Modifier.padding(14.dp)) {
                                         Text(note)
 
                                         Row(
                                             Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.End
                                         ) {
-
                                             TextButton(
-                                                onClick = {
-                                                    copyText(note)
-                                                }
+                                                onClick = { copyText(note) }
                                             ) {
                                                 Text("Copy")
                                             }
 
                                             TextButton(
-                                                onClick = {
-                                                    notes.removeAt(index)
-                                                }
+                                                onClick = { notes.removeAt(index) }
                                             ) {
-                                                Text(
-                                                    if (sinhala) "මකන්න"
-                                                    else "Delete"
-                                                )
+                                                Text(if (sinhala) "මකන්න" else "Delete")
                                             }
                                         }
                                     }
@@ -969,13 +862,10 @@ private fun NexusApp() {
                         }
                     }
 
-                    // SAVED SCRIPTS
-
                     Tab.SAVED -> {
 
                         ScreenTitle(
-                            if (sinhala) "සුරැකි පිටපත්"
-                            else "Saved Scripts"
+                            if (sinhala) "සුරැකි පිටපත්" else "Saved Scripts"
                         )
 
                         if (savedScripts.isEmpty()) {
@@ -990,42 +880,30 @@ private fun NexusApp() {
 
                         } else {
 
-                            LazyColumn(
-                                Modifier.weight(1f)
-                            ) {
-
+                            LazyColumn(Modifier.weight(1f)) {
                                 itemsIndexed(savedScripts) { index, script ->
 
                                     Card(
                                         Modifier
                                             .fillMaxWidth()
                                             .padding(vertical = 5.dp),
-
                                         shape = RoundedCornerShape(18.dp)
                                     ) {
-
-                                        Column(
-                                            Modifier.padding(14.dp)
-                                        ) {
-
+                                        Column(Modifier.padding(14.dp)) {
                                             Text(script)
 
                                             Row(
                                                 Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.End
                                             ) {
-
                                                 TextButton(
-                                                    onClick = {
-                                                        copyText(script)
-                                                    }
+                                                    onClick = { copyText(script) }
                                                 ) {
                                                     Text("Copy")
                                                 }
 
                                                 TextButton(
                                                     onClick = {
-
                                                         notes.add(0, script)
                                                         tab = Tab.NOTES
 
@@ -1036,10 +914,7 @@ private fun NexusApp() {
                                                         ).show()
                                                     }
                                                 ) {
-                                                    Text(
-                                                        if (sinhala) "සටහන්"
-                                                        else "To Notes"
-                                                    )
+                                                    Text(if (sinhala) "සටහන්" else "To Notes")
                                                 }
 
                                                 TextButton(
@@ -1047,10 +922,7 @@ private fun NexusApp() {
                                                         savedScripts.removeAt(index)
                                                     }
                                                 ) {
-                                                    Text(
-                                                        if (sinhala) "මකන්න"
-                                                        else "Delete"
-                                                    )
+                                                    Text(if (sinhala) "මකන්න" else "Delete")
                                                 }
                                             }
                                         }
@@ -1060,41 +932,30 @@ private fun NexusApp() {
                         }
                     }
 
-                    // TOOLS SCREEN
-
                     Tab.TOOLS -> {
 
                         ScreenTitle(
-                            if (sinhala) "NEXUS මෙවලම්"
-                            else "NEXUS Tools"
+                            if (sinhala) "NEXUS මෙවලම්" else "NEXUS Tools"
                         )
 
                         ToolCard(
-                            title = if (sinhala)
-                                "දිනදර්ශනය"
-                            else
-                                "Calendar",
-
+                            title = if (sinhala) "දිනදර්ශනය" else "Calendar",
                             description = if (sinhala)
                                 "දුරකථනයේ Calendar යෙදුම විවෘත කරන්න."
                             else
                                 "Open your phone's Calendar.",
-
                             icon = Icons.Default.CalendarMonth
                         ) {
 
                             try {
-
                                 val start =
-                                    System.currentTimeMillis() +
-                                        60 * 60 * 1000
+                                    System.currentTimeMillis() + 60 * 60 * 1000
 
                                 val end = start + 60 * 60 * 1000
 
                                 val intent = Intent(
                                     Intent.ACTION_INSERT
                                 ).apply {
-
                                     data = CalendarContract.Events.CONTENT_URI
 
                                     putExtra(
@@ -1121,7 +982,6 @@ private fun NexusApp() {
                                 context.startActivity(intent)
 
                             } catch (e: Exception) {
-
                                 Toast.makeText(
                                     context,
                                     "Calendar Error: ${e.message}",
@@ -1132,23 +992,18 @@ private fun NexusApp() {
 
                         ToolCard(
                             title = "Camera",
-
                             description = if (sinhala)
                                 "දුරකථනයේ Camera යෙදුම විවෘත කරන්න."
                             else
                                 "Open your phone's Camera.",
-
                             icon = Icons.Default.CameraAlt
                         ) {
 
                             try {
-
                                 cameraLauncher.launch(
                                     Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                                 )
-
                             } catch (_: Exception) {
-
                                 Toast.makeText(
                                     context,
                                     "Camera unavailable.",
@@ -1158,13 +1013,10 @@ private fun NexusApp() {
                         }
                     }
 
-                    // SETTINGS SCREEN
-
                     Tab.SETTINGS -> {
 
                         ScreenTitle(
-                            if (sinhala) "NEXUS සැකසුම්"
-                            else "NEXUS Settings"
+                            if (sinhala) "NEXUS සැකසුම්" else "NEXUS Settings"
                         )
 
                         Card(
@@ -1172,25 +1024,19 @@ private fun NexusApp() {
                             shape = RoundedCornerShape(24.dp)
                         ) {
 
-                            Column(
-                                Modifier.padding(18.dp)
-                            ) {
+                            Column(Modifier.padding(18.dp)) {
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-
                                     Icon(
                                         Icons.Default.Language,
                                         null,
                                         tint = NexusCyan
                                     )
-
                                     Spacer(Modifier.width(10.dp))
-
                                     Text(
-                                        if (sinhala) "භාෂාව"
-                                        else "Language",
+                                        if (sinhala) "භාෂාව" else "Language",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1198,42 +1044,32 @@ private fun NexusApp() {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-
                                     Text("සිංහල")
-
                                     Spacer(Modifier.width(10.dp))
 
                                     Switch(
                                         checked = sinhala,
-                                        onCheckedChange = {
-                                            sinhala = it
-                                        }
+                                        onCheckedChange = { sinhala = it }
                                     )
 
                                     Spacer(Modifier.width(10.dp))
-
                                     Text("English")
                                 }
 
                                 HorizontalDivider()
-
                                 Spacer(Modifier.height(16.dp))
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-
                                     Icon(
                                         Icons.Default.Palette,
                                         null,
                                         tint = NexusCyan
                                     )
-
                                     Spacer(Modifier.width(10.dp))
-
                                     Text(
-                                        if (sinhala) "පෙනුම"
-                                        else "Appearance",
+                                        if (sinhala) "පෙනුම" else "Appearance",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1241,41 +1077,29 @@ private fun NexusApp() {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-
-                                    Text(
-                                        if (dark) "Dark Mode"
-                                        else "Light Mode"
-                                    )
-
+                                    Text(if (dark) "Dark Mode" else "Light Mode")
                                     Spacer(Modifier.weight(1f))
 
                                     Switch(
                                         checked = dark,
-                                        onCheckedChange = {
-                                            dark = it
-                                        }
+                                        onCheckedChange = { dark = it }
                                     )
                                 }
 
                                 HorizontalDivider()
-
                                 Spacer(Modifier.height(16.dp))
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-
                                     Icon(
                                         Icons.Default.Security,
                                         null,
                                         tint = NexusCyan
                                     )
-
                                     Spacer(Modifier.width(10.dp))
-
                                     Text(
-                                        if (sinhala) "දත්ත ආරක්ෂාව"
-                                        else "Data Security",
+                                        if (sinhala) "දත්ත ආරක්ෂාව" else "Data Security",
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -1287,7 +1111,6 @@ private fun NexusApp() {
                                         "Chat, Notes සහ Saved Scripts AES-256-GCM Encryption මඟින් ආරක්ෂා කර ඇත. Encryption Key එක Android Keystore තුළ ගබඩා වේ."
                                     else
                                         "Chat, Notes and Saved Scripts are protected using AES-256-GCM encryption. The encryption key is stored in Android Keystore.",
-
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1309,9 +1132,7 @@ private fun NexusApp() {
                                         )
                                         .padding(16.dp)
                                 ) {
-
                                     Column {
-
                                         Text(
                                             "NEXUS AI",
                                             color = Color.White,
@@ -1353,17 +1174,11 @@ private fun NexusLogo(size: Int) {
             .clip(RoundedCornerShape(17.dp))
             .background(
                 Brush.linearGradient(
-                    listOf(
-                        NexusBlue,
-                        NexusPurple,
-                        NexusCyan
-                    )
+                    listOf(NexusBlue, NexusPurple, NexusCyan)
                 )
             ),
-
         contentAlignment = Alignment.Center
     ) {
-
         Text(
             "N",
             color = Color.White,
@@ -1396,14 +1211,11 @@ private fun EmptyState(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 60.dp),
-
         contentAlignment = Alignment.Center
     ) {
-
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
             Icon(
                 icon,
                 null,
@@ -1421,6 +1233,8 @@ private fun EmptyState(
     }
 }
 
+// UPDATED TOOL CARD: ENTIRE CARD IS CLICKABLE
+
 @Composable
 private fun ToolCard(
     title: String,
@@ -1430,6 +1244,7 @@ private fun ToolCard(
 ) {
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 7.dp),
@@ -1492,16 +1307,11 @@ private fun ToolCard(
                 )
             }
 
-            IconButton(
-                onClick = onClick
-            ) {
-
-                Icon(
-                    Icons.Default.ArrowForward,
-                    contentDescription = "Open",
-                    tint = NexusCyan
-                )
-            }
+            Icon(
+                Icons.Default.ArrowForward,
+                contentDescription = "Open",
+                tint = NexusCyan
+            )
         }
     }
 }
