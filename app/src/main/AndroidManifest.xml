@@ -5,6 +5,10 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
@@ -20,7 +24,14 @@
         </intent>
     </queries>
 
+    <!-- Existing permission -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Voice Assistant permissions -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -39,7 +50,13 @@
 
         </activity>
 
+        <!-- NEXUS Background Voice Service -->
+        <service
+            android:name=".NexusVoiceService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
     </application>
 
 </manifest>
-
