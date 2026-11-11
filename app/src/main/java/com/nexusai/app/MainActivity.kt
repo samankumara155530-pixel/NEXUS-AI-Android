@@ -1,7 +1,9 @@
 
 package com.nexusai.app
 
+import android.Manifest
 import android.content.*
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.provider.MediaStore
@@ -14,6 +16,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -71,8 +74,10 @@ private const val BACKEND_URL =
 // MAIN ACTIVITY
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         setContent {
             NexusApp()
         }
@@ -82,11 +87,15 @@ class MainActivity : ComponentActivity() {
 // ENCRYPTION
 
 private fun getEncryptionKey(): SecretKey {
+
     val keyStore = KeyStore.getInstance("AndroidKeyStore")
     keyStore.load(null)
 
     val existing = keyStore.getKey(KEY_ALIAS, null)
-    if (existing != null) return existing as SecretKey
+
+    if (existing != null) {
+        return existing as SecretKey
+    }
 
     val generator = KeyGenerator.getInstance(
         KeyProperties.KEY_ALGORITHM_AES,
@@ -106,12 +115,18 @@ private fun getEncryptionKey(): SecretKey {
         .build()
 
     generator.init(spec)
+
     return generator.generateKey()
 }
 
 private fun encryptData(value: String): String {
+
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    cipher.init(Cipher.ENCRYPT_MODE, getEncryptionKey())
+
+    cipher.init(
+        Cipher.ENCRYPT_MODE,
+        getEncryptionKey()
+    )
 
     val encrypted = cipher.doFinal(
         value.toByteArray(Charsets.UTF_8)
@@ -124,14 +139,22 @@ private fun encryptData(value: String): String {
 }
 
 private fun decryptData(value: String): String {
-    val combined = Base64.decode(value, Base64.NO_WRAP)
+
+    val combined = Base64.decode(
+        value,
+        Base64.NO_WRAP
+    )
 
     require(combined.size >= 28) {
         "Invalid encrypted data"
     }
 
     val iv = combined.copyOfRange(0, 12)
-    val encrypted = combined.copyOfRange(12, combined.size)
+
+    val encrypted = combined.copyOfRange(
+        12,
+        combined.size
+    )
 
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
 
@@ -160,25 +183,33 @@ private fun readStringList(
         Context.MODE_PRIVATE
     )
 
-    val raw = prefs.getString(key, null) ?: return fallback
+    val raw = prefs.getString(key, null)
+        ?: return fallback
 
     return try {
+
         val array = JSONArray(decryptData(raw))
-        List(array.length()) { array.optString(it) }
+
+        List(array.length()) {
+            array.optString(it)
+        }
 
     } catch (_: Exception) {
 
-        // Migrate old unencrypted JSON without deleting it
-        // if encryption fails.
-
         try {
+
             val array = JSONArray(raw)
 
             val oldData = List(array.length()) {
                 array.optString(it)
             }
 
-            writeStringList(context, key, oldData)
+            writeStringList(
+                context,
+                key,
+                oldData
+            )
+
             oldData
 
         } catch (_: Exception) {
@@ -192,9 +223,14 @@ private fun writeStringList(
     key: String,
     values: List<String>
 ) {
+
     try {
+
         val array = JSONArray()
-        values.forEach { array.put(it) }
+
+        values.forEach {
+            array.put(it)
+        }
 
         val encrypted = encryptData(array.toString())
 
@@ -207,9 +243,11 @@ private fun writeStringList(
             .apply()
 
     } catch (_: Exception) {
-        // Existing saved data is not overwritten on failure.
+        // Preserve existing data if encryption fails.
     }
 }
+
+// NAVIGATION
 
 private enum class Tab {
     CHAT,
@@ -229,25 +267,148 @@ private fun NexusApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var dark by remember { mutableStateOf(true) }
-    var sinhala by remember { mutableStateOf(true) }
-    var tab by remember { mutableStateOf(Tab.CHAT) }
+    var dark by remember {
+        mutableStateOf(true)
+    }
+
+    var sinhala by remember {
+        mutableStateOf(true)
+    }
+
+    var tab by remember {
+        mutableStateOf(Tab.CHAT)
+    }
+
+    var voiceEngineEnabled by remember {
+        mutableStateOf(false)
+    }
+
+    var voicePermissionDenied by remember {
+        mutableStateOf(false)
+    }
+
+    // MICROPHONE PERMISSION
+
+    val microphonePermissionLauncher =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            if (granted) {
+
+                try {
+
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(
+                            context,
+                            NexusVoiceService::class.java
+                        )
+                    )
+
+                    voiceEngineEnabled = true
+
+                } catch (e: Exception) {
+
+                    voiceEngineEnabled = false
+
+                    Toast.makeText(
+                        context,
+                        "Voice Engine Error: ${e.localizedMessage}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+
+            } else {
+
+                voiceEngineEnabled = false
+                voicePermissionDenied = true
+
+                Toast.makeText(
+                    context,
+                    "Microphone permission required.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+    // VOICE ENGINE CONTROL
+
+    fun startVoiceEngine() {
+
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (granted) {
+
+            try {
+
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(
+                        context,
+                        NexusVoiceService::class.java
+                    )
+                )
+
+                voiceEngineEnabled = true
+
+            } catch (e: Exception) {
+
+                voiceEngineEnabled = false
+
+                Toast.makeText(
+                    context,
+                    "Voice Error: ${e.localizedMessage}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+
+        } else {
+
+            microphonePermissionLauncher.launch(
+                Manifest.permission.RECORD_AUDIO
+            )
+        }
+    }
+
+    fun stopVoiceEngine() {
+
+        context.stopService(
+            Intent(
+                context,
+                NexusVoiceService::class.java
+            )
+        )
+
+        voiceEngineEnabled = false
+    }
+
+    // LOCAL DATA
 
     val notes = remember {
         mutableStateListOf<String>().apply {
-            addAll(readStringList(context, KEY_NOTES))
+            addAll(
+                readStringList(context, KEY_NOTES)
+            )
         }
     }
 
     val savedScripts = remember {
         mutableStateListOf<String>().apply {
-            addAll(readStringList(context, KEY_SCRIPTS))
+            addAll(
+                readStringList(context, KEY_SCRIPTS)
+            )
         }
     }
 
     val memories = remember {
         mutableStateListOf<String>().apply {
-            addAll(readStringList(context, KEY_MEMORIES))
+            addAll(
+                readStringList(context, KEY_MEMORIES)
+            )
         }
     }
 
@@ -255,15 +416,28 @@ private fun NexusApp() {
         mutableStateListOf<String>()
     }
 
-    var memoryText by remember { mutableStateOf("") }
-    var noteText by remember { mutableStateOf("") }
-    var prompt by remember { mutableStateOf("") }
-    var isSending by remember { mutableStateOf(false) }
+    var memoryText by remember {
+        mutableStateOf("")
+    }
+
+    var noteText by remember {
+        mutableStateOf("")
+    }
+
+    var prompt by remember {
+        mutableStateOf("")
+    }
+
+    var isSending by remember {
+        mutableStateOf(false)
+    }
 
     var chatMessages by remember {
         mutableStateOf(
             readStringList(context, KEY_CHAT).ifEmpty {
-                listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙")
+                listOf(
+                    "NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙"
+                )
             }
         )
     }
@@ -271,26 +445,48 @@ private fun NexusApp() {
     val chatState = rememberLazyListState()
 
     LaunchedEffect(chatMessages) {
-        writeStringList(context, KEY_CHAT, chatMessages)
+
+        writeStringList(
+            context,
+            KEY_CHAT,
+            chatMessages
+        )
 
         if (chatMessages.isNotEmpty()) {
-            chatState.animateScrollToItem(chatMessages.lastIndex)
+            chatState.animateScrollToItem(
+                chatMessages.lastIndex
+            )
         }
     }
 
     LaunchedEffect(notes.toList()) {
-        writeStringList(context, KEY_NOTES, notes.toList())
+        writeStringList(
+            context,
+            KEY_NOTES,
+            notes.toList()
+        )
     }
 
     LaunchedEffect(savedScripts.toList()) {
-        writeStringList(context, KEY_SCRIPTS, savedScripts.toList())
+        writeStringList(
+            context,
+            KEY_SCRIPTS,
+            savedScripts.toList()
+        )
     }
 
     LaunchedEffect(memories.toList()) {
-        writeStringList(context, KEY_MEMORIES, memories.toList())
+        writeStringList(
+            context,
+            KEY_MEMORIES,
+            memories.toList()
+        )
     }
 
+    // THEME
+
     val colors = if (dark) {
+
         darkColorScheme(
             primary = NexusBlue,
             onPrimary = Color.White,
@@ -305,7 +501,9 @@ private fun NexusApp() {
             onSurfaceVariant = Color(0xFFB8C9E8),
             outline = Color(0xFF42577C)
         )
+
     } else {
+
         lightColorScheme(
             primary = Color(0xFF1769D2),
             onPrimary = Color.White,
@@ -321,6 +519,8 @@ private fun NexusApp() {
         )
     }
 
+    // VOICE INPUT
+
     val voiceLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -332,34 +532,47 @@ private fun NexusApp() {
             ?.firstOrNull()
 
         if (!spoken.isNullOrBlank()) {
-            if (tab == Tab.NOTES) {
-                noteText = spoken
-            } else if (tab == Tab.MEMORY) {
-                memoryText = spoken
-            } else {
-                prompt = spoken
+
+            when (tab) {
+
+                Tab.NOTES -> noteText = spoken
+
+                Tab.MEMORY -> memoryText = spoken
+
+                else -> prompt = spoken
             }
         }
     }
 
+    // CAMERA
+
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
+
         Toast.makeText(
             context,
-            if (sinhala) "Camera වෙතින් ආපසු පැමිණියා."
-            else "Returned from Camera.",
+            if (sinhala)
+                "Camera වෙතින් ආපසු පැමිණියා."
+            else
+                "Returned from Camera.",
             Toast.LENGTH_SHORT
         ).show()
     }
 
+    // COPY
+
     fun copyText(text: String) {
+
         val clipboard = context.getSystemService(
             Context.CLIPBOARD_SERVICE
         ) as ClipboardManager
 
         clipboard.setPrimaryClip(
-            ClipData.newPlainText("NEXUS AI", text)
+            ClipData.newPlainText(
+                "NEXUS AI",
+                text
+            )
         )
 
         Toast.makeText(
@@ -369,29 +582,40 @@ private fun NexusApp() {
         ).show()
     }
 
+    // SAVE SCRIPT
+
     fun saveScript(text: String) {
+
         if (savedScripts.none { it == text }) {
+
             savedScripts.add(0, text)
 
             Toast.makeText(
                 context,
-                if (sinhala) "පිළිතුර සුරැකුවා."
-                else "Script saved.",
+                if (sinhala)
+                    "පිළිතුර සුරැකුවා."
+                else
+                    "Script saved.",
                 Toast.LENGTH_SHORT
             ).show()
         }
     }
 
+    // SUGGEST MEMORY
+
     fun suggestMemory(text: String) {
+
         val clean = text
             .removePrefix("ඔබ: ")
             .removePrefix("You: ")
             .trim()
 
-        if (clean.isNotBlank() &&
+        if (
+            clean.isNotBlank() &&
             memories.none { it == clean } &&
             pendingMemories.none { it == clean }
         ) {
+
             pendingMemories.add(clean)
 
             Toast.makeText(
@@ -405,14 +629,20 @@ private fun NexusApp() {
         }
     }
 
+    // APPROVE MEMORY
+
     fun approveMemory(text: String) {
+
         if (memories.none { it == text }) {
+
             memories.add(0, text)
 
             Toast.makeText(
                 context,
-                if (sinhala) "මතකය ආරක්ෂිතව සුරැකුවා."
-                else "Memory saved securely.",
+                if (sinhala)
+                    "මතකය ආරක්ෂිතව සුරැකුවා."
+                else
+                    "Memory saved securely.",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -420,21 +650,158 @@ private fun NexusApp() {
         pendingMemories.remove(text)
     }
 
+    // SEND CHAT
+
+    fun sendMessage() {
+
+        val userText = prompt.trim()
+
+        if (userText.isEmpty() || isSending) {
+            return
+        }
+
+        chatMessages = chatMessages +
+            ((if (sinhala) "ඔබ: " else "You: ") + userText)
+
+        prompt = ""
+        isSending = true
+
+        scope.launch {
+
+            val reply = withContext(Dispatchers.IO) {
+
+                var connection: HttpURLConnection? = null
+
+                try {
+
+                    connection =
+                        (URL(BACKEND_URL)
+                            .openConnection() as HttpURLConnection)
+                            .apply {
+
+                                requestMethod = "POST"
+                                connectTimeout = 20000
+                                readTimeout = 30000
+                                doOutput = true
+
+                                setRequestProperty(
+                                    "Content-Type",
+                                    "application/json; charset=utf-8"
+                                )
+                            }
+
+                    val memoryArray = JSONArray()
+
+                    memories
+                        .take(30)
+                        .forEach {
+                            memoryArray.put(it.take(500))
+                        }
+
+                    val historyArray = JSONArray()
+
+                    chatMessages
+                        .takeLast(12)
+                        .forEach { item ->
+
+                            val isUser =
+                                item.startsWith("ඔබ: ") ||
+                                item.startsWith("You: ")
+
+                            val text = item
+                                .removePrefix("ඔබ: ")
+                                .removePrefix("You: ")
+
+                            historyArray.put(
+                                JSONObject()
+                                    .put(
+                                        "role",
+                                        if (isUser) "user" else "model"
+                                    )
+                                    .put("text", text)
+                            )
+                        }
+
+                    val body = JSONObject()
+                        .put("message", userText)
+                        .put("memory", memoryArray)
+                        .put("history", historyArray)
+                        .toString()
+
+                    connection.outputStream.use {
+                        it.write(
+                            body.toByteArray(Charsets.UTF_8)
+                        )
+                    }
+
+                    val code = connection.responseCode
+
+                    val stream = if (code in 200..299) {
+                        connection.inputStream
+                    } else {
+                        connection.errorStream
+                    }
+
+                    val response = stream
+                        ?.bufferedReader()
+                        ?.use { it.readText() }
+                        .orEmpty()
+
+                    if (code in 200..299) {
+
+                        val json = JSONObject(response)
+
+                        json.optString(
+                            "reply",
+                            json.optString(
+                                "response",
+                                response
+                            )
+                        )
+
+                    } else {
+
+                        "AI සේවාවේ දෝෂයක්: $code\n$response"
+                    }
+
+                } catch (e: Exception) {
+
+                    "සම්බන්ධතාවය අසාර්ථකයි: " +
+                        (e.localizedMessage ?: "නොදන්නා දෝෂයක්")
+
+                } finally {
+
+                    connection?.disconnect()
+                }
+            }
+
+            chatMessages = chatMessages + reply
+            isSending = false
+        }
+    }
+
+    // UI
+
     MaterialTheme(colorScheme = colors) {
 
         Scaffold(
             containerColor = Color.Transparent,
 
             topBar = {
+
                 TopAppBar(
+
                     title = {
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+
                             NexusLogo(46)
 
                             Column {
+
                                 Text(
                                     "NEXUS AI",
                                     fontWeight = FontWeight.Black,
@@ -454,7 +821,13 @@ private fun NexusApp() {
                     },
 
                     actions = {
-                        IconButton(onClick = { dark = !dark }) {
+
+                        IconButton(
+                            onClick = {
+                                dark = !dark
+                            }
+                        ) {
+
                             Icon(
                                 if (dark)
                                     Icons.Default.LightMode
@@ -473,6 +846,7 @@ private fun NexusApp() {
             },
 
             bottomBar = {
+
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
                     tonalElevation = 8.dp
@@ -482,42 +856,54 @@ private fun NexusApp() {
                         selected = tab == Tab.CHAT,
                         onClick = { tab = Tab.CHAT },
                         icon = { Icon(Icons.Default.Chat, null) },
-                        label = { Text(if (sinhala) "චැට්" else "Chat") }
+                        label = {
+                            Text(if (sinhala) "චැට්" else "Chat")
+                        }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.NOTES,
                         onClick = { tab = Tab.NOTES },
                         icon = { Icon(Icons.Default.Notes, null) },
-                        label = { Text(if (sinhala) "සටහන්" else "Notes") }
+                        label = {
+                            Text(if (sinhala) "සටහන්" else "Notes")
+                        }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.SAVED,
                         onClick = { tab = Tab.SAVED },
                         icon = { Icon(Icons.Default.Bookmark, null) },
-                        label = { Text(if (sinhala) "සුරැකි" else "Saved") }
+                        label = {
+                            Text(if (sinhala) "සුරැකි" else "Saved")
+                        }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.MEMORY,
                         onClick = { tab = Tab.MEMORY },
                         icon = { Icon(Icons.Default.Psychology, null) },
-                        label = { Text(if (sinhala) "මතකය" else "Memory") }
+                        label = {
+                            Text(if (sinhala) "මතකය" else "Memory")
+                        }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.TOOLS,
                         onClick = { tab = Tab.TOOLS },
                         icon = { Icon(Icons.Default.Build, null) },
-                        label = { Text(if (sinhala) "මෙවලම්" else "Tools") }
+                        label = {
+                            Text(if (sinhala) "මෙවලම්" else "Tools")
+                        }
                     )
 
                     NavigationBarItem(
                         selected = tab == Tab.SETTINGS,
                         onClick = { tab = Tab.SETTINGS },
                         icon = { Icon(Icons.Default.Settings, null) },
-                        label = { Text(if (sinhala) "සැකසුම්" else "Settings") }
+                        label = {
+                            Text(if (sinhala) "සැකසුම්" else "Settings")
+                        }
                     )
                 }
             }
@@ -530,13 +916,16 @@ private fun NexusApp() {
                     .background(
                         Brush.verticalGradient(
                             if (dark) {
+
                                 listOf(
                                     Color(0xFF070B1D),
                                     Color(0xFF142451),
                                     Color(0xFF25134B),
                                     Color(0xFF070B1D)
                                 )
+
                             } else {
+
                                 listOf(
                                     Color(0xFFF1F5FF),
                                     Color(0xFFDCE8FF),
@@ -546,7 +935,10 @@ private fun NexusApp() {
                         )
                     )
                     .padding(padding)
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .padding(
+                        horizontal = 14.dp,
+                        vertical = 12.dp
+                    )
             ) {
 
                 when (tab) {
@@ -563,15 +955,18 @@ private fun NexusApp() {
                             ),
                             elevation = CardDefaults.cardElevation(5.dp)
                         ) {
+
                             Row(
                                 Modifier.padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+
                                 NexusLogo(54)
 
                                 Spacer(Modifier.width(14.dp))
 
                                 Column {
+
                                     Text(
                                         if (sinhala)
                                             "NEXUS සහායකයා"
@@ -586,6 +981,7 @@ private fun NexusApp() {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+
                                         Box(
                                             Modifier
                                                 .size(8.dp)
@@ -616,6 +1012,7 @@ private fun NexusApp() {
                                 .fillMaxWidth(),
                             state = chatState
                         ) {
+
                             itemsIndexed(chatMessages) { index, message ->
 
                                 val isUser =
@@ -629,6 +1026,7 @@ private fun NexusApp() {
                                     else
                                         Arrangement.Start
                                 ) {
+
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth(0.91f)
@@ -650,7 +1048,10 @@ private fun NexusApp() {
 
                                         elevation = CardDefaults.cardElevation(2.dp)
                                     ) {
-                                        Column(Modifier.padding(14.dp)) {
+
+                                        Column(
+                                            Modifier.padding(14.dp)
+                                        ) {
 
                                             Text(
                                                 message,
@@ -666,16 +1067,19 @@ private fun NexusApp() {
                                             ) {
 
                                                 if (isUser) {
+
                                                     TextButton(
                                                         onClick = {
                                                             suggestMemory(message)
                                                         }
                                                     ) {
+
                                                         Icon(
                                                             Icons.Default.Lightbulb,
                                                             null,
                                                             tint = NexusCyan
                                                         )
+
                                                         Text(
                                                             if (sinhala)
                                                                 "මතකයට යෝජනා කරන්න"
@@ -683,6 +1087,7 @@ private fun NexusApp() {
                                                                 "Suggest Memory"
                                                         )
                                                     }
+
                                                 } else if (index != 0) {
 
                                                     TextButton(
@@ -690,11 +1095,13 @@ private fun NexusApp() {
                                                             copyText(message)
                                                         }
                                                     ) {
+
                                                         Icon(
                                                             Icons.Default.ContentCopy,
                                                             null,
                                                             tint = NexusCyan
                                                         )
+
                                                         Text("Copy")
                                                     }
 
@@ -703,11 +1110,13 @@ private fun NexusApp() {
                                                             saveScript(message)
                                                         }
                                                     ) {
+
                                                         Icon(
                                                             Icons.Default.BookmarkAdd,
                                                             null,
                                                             tint = NexusCyan
                                                         )
+
                                                         Text(
                                                             if (sinhala)
                                                                 "සුරකින්න"
@@ -727,7 +1136,9 @@ private fun NexusApp() {
 
                         OutlinedTextField(
                             value = prompt,
-                            onValueChange = { prompt = it },
+                            onValueChange = {
+                                prompt = it
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = {
                                 Text(
@@ -739,31 +1150,40 @@ private fun NexusApp() {
                             },
                             shape = RoundedCornerShape(20.dp),
                             trailingIcon = {
-                                IconButton(onClick = {
-                                    try {
-                                        val intent = Intent(
-                                            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                                        ).apply {
-                                            putExtra(
-                                                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                            )
-                                            putExtra(
-                                                RecognizerIntent.EXTRA_LANGUAGE,
-                                                if (sinhala) "si-LK" else "en-US"
-                                            )
+
+                                IconButton(
+                                    onClick = {
+
+                                        try {
+
+                                            val intent = Intent(
+                                                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                                            ).apply {
+
+                                                putExtra(
+                                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                                )
+
+                                                putExtra(
+                                                    RecognizerIntent.EXTRA_LANGUAGE,
+                                                    if (sinhala) "si-LK" else "en-US"
+                                                )
+                                            }
+
+                                            voiceLauncher.launch(intent)
+
+                                        } catch (_: Exception) {
+
+                                            Toast.makeText(
+                                                context,
+                                                "Voice input unavailable.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
                                         }
-
-                                        voiceLauncher.launch(intent)
-
-                                    } catch (_: Exception) {
-                                        Toast.makeText(
-                                            context,
-                                            "Voice input unavailable.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
                                     }
-                                }) {
+                                ) {
+
                                     Icon(
                                         Icons.Default.Mic,
                                         null,
@@ -777,156 +1197,28 @@ private fun NexusApp() {
 
                         Button(
                             onClick = {
-
-                                val userText = prompt.trim()
-
-                                if (userText.isNotEmpty() && !isSending) {
-
-                                    chatMessages = chatMessages +
-                                        ((if (sinhala) "ඔබ: " else "You: ") + userText)
-
-                                    prompt = ""
-                                    isSending = true
-
-                                    scope.launch {
-
-                                        val reply = withContext(Dispatchers.IO) {
-
-                                            var connection: HttpURLConnection? = null
-
-                                            try {
-
-                                                connection =
-                                                    (URL(BACKEND_URL)
-                                                        .openConnection() as HttpURLConnection)
-                                                        .apply {
-                                                            requestMethod = "POST"
-                                                            connectTimeout = 20000
-                                                            readTimeout = 30000
-                                                            doOutput = true
-
-                                                            setRequestProperty(
-                                                                "Content-Type",
-                                                                "application/json; charset=utf-8"
-                                                            )
-                                                        }
-
-                                                // Send message + approved memories
-                                                // + last 12 conversation messages.
-
-                                                val memoryArray = JSONArray()
-
-                                                memories
-                                                    .take(30)
-                                                    .forEach {
-                                                        memoryArray.put(it.take(500))
-                                                    }
-
-                                                val historyArray = JSONArray()
-
-                                                chatMessages
-                                                    .takeLast(12)
-                                                    .forEach { item ->
-
-                                                        val isUser =
-                                                            item.startsWith("ඔබ: ") ||
-                                                            item.startsWith("You: ")
-
-                                                        val text = item
-                                                            .removePrefix("ඔබ: ")
-                                                            .removePrefix("You: ")
-
-                                                        historyArray.put(
-                                                            JSONObject()
-                                                                .put(
-                                                                    "role",
-                                                                    if (isUser)
-                                                                        "user"
-                                                                    else
-                                                                        "model"
-                                                                )
-                                                                .put("text", text)
-                                                        )
-                                                    }
-
-                                                val body = JSONObject()
-                                                    .put("message", userText)
-                                                    .put("memory", memoryArray)
-                                                    .put("history", historyArray)
-                                                    .toString()
-
-                                                connection.outputStream.use {
-                                                    it.write(
-                                                        body.toByteArray(
-                                                            Charsets.UTF_8
-                                                        )
-                                                    )
-                                                }
-
-                                                val code = connection.responseCode
-
-                                                val stream = if (code in 200..299)
-                                                    connection.inputStream
-                                                else
-                                                    connection.errorStream
-
-                                                val response = stream
-                                                    ?.bufferedReader()
-                                                    ?.use { it.readText() }
-                                                    .orEmpty()
-
-                                                if (code in 200..299) {
-
-                                                    val json = JSONObject(response)
-
-                                                    json.optString(
-                                                        "reply",
-                                                        json.optString(
-                                                            "response",
-                                                            response
-                                                        )
-                                                    )
-
-                                                } else {
-
-                                                    "AI සේවාවේ දෝෂයක්: $code\n$response"
-                                                }
-
-                                            } catch (e: Exception) {
-
-                                                "සම්බන්ධතාවය අසාර්ථකයි: " +
-                                                    (e.localizedMessage
-                                                        ?: "නොදන්නා දෝෂයක්")
-
-                                            } finally {
-                                                connection?.disconnect()
-                                            }
-                                        }
-
-                                        chatMessages = chatMessages + reply
-                                        isSending = false
-                                    }
-                                }
+                                sendMessage()
                             },
-
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(54.dp),
-
                             enabled = prompt.isNotBlank() && !isSending,
                             shape = RoundedCornerShape(18.dp)
                         ) {
 
                             if (isSending) {
+
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(20.dp),
                                     strokeWidth = 2.dp,
                                     color = Color.White
                                 )
+
                                 Spacer(Modifier.width(8.dp))
                             }
 
                             Icon(Icons.Default.Send, null)
+
                             Spacer(Modifier.width(8.dp))
 
                             Text(
@@ -946,7 +1238,9 @@ private fun NexusApp() {
 
                         OutlinedTextField(
                             value = noteText,
-                            onValueChange = { noteText = it },
+                            onValueChange = {
+                                noteText = it
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = {
                                 Text(
@@ -964,7 +1258,9 @@ private fun NexusApp() {
 
                         Button(
                             onClick = {
+
                                 if (noteText.isNotBlank()) {
+
                                     notes.add(0, noteText.trim())
                                     noteText = ""
 
@@ -978,8 +1274,11 @@ private fun NexusApp() {
                             modifier = Modifier.fillMaxWidth(),
                             enabled = noteText.isNotBlank()
                         ) {
+
                             Icon(Icons.Default.Save, null)
+
                             Spacer(Modifier.width(8.dp))
+
                             Text(
                                 if (sinhala) "සුරකින්න" else "Save Note"
                             )
@@ -987,7 +1286,10 @@ private fun NexusApp() {
 
                         Spacer(Modifier.height(12.dp))
 
-                        LazyColumn(Modifier.weight(1f)) {
+                        LazyColumn(
+                            Modifier.weight(1f)
+                        ) {
+
                             itemsIndexed(notes) { index, note ->
 
                                 Card(
@@ -996,15 +1298,22 @@ private fun NexusApp() {
                                         .padding(vertical = 5.dp),
                                     shape = RoundedCornerShape(18.dp)
                                 ) {
-                                    Column(Modifier.padding(14.dp)) {
+
+                                    Column(
+                                        Modifier.padding(14.dp)
+                                    ) {
+
                                         Text(note)
 
                                         Row(
                                             Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.End
                                         ) {
+
                                             TextButton(
-                                                onClick = { copyText(note) }
+                                                onClick = {
+                                                    copyText(note)
+                                                }
                                             ) {
                                                 Text("Copy")
                                             }
@@ -1015,8 +1324,10 @@ private fun NexusApp() {
                                                 }
                                             ) {
                                                 Text(
-                                                    if (sinhala) "මකන්න"
-                                                    else "Delete"
+                                                    if (sinhala)
+                                                        "මකන්න"
+                                                    else
+                                                        "Delete"
                                                 )
                                             }
                                         }
@@ -1049,7 +1360,10 @@ private fun NexusApp() {
 
                         } else {
 
-                            LazyColumn(Modifier.weight(1f)) {
+                            LazyColumn(
+                                Modifier.weight(1f)
+                            ) {
+
                                 itemsIndexed(savedScripts) { index, script ->
 
                                     Card(
@@ -1058,13 +1372,18 @@ private fun NexusApp() {
                                             .padding(vertical = 5.dp),
                                         shape = RoundedCornerShape(18.dp)
                                     ) {
-                                        Column(Modifier.padding(14.dp)) {
+
+                                        Column(
+                                            Modifier.padding(14.dp)
+                                        ) {
+
                                             Text(script)
 
                                             Row(
                                                 Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.End
                                             ) {
+
                                                 TextButton(
                                                     onClick = {
                                                         copyText(script)
@@ -1075,6 +1394,7 @@ private fun NexusApp() {
 
                                                 TextButton(
                                                     onClick = {
+
                                                         notes.add(0, script)
                                                         tab = Tab.NOTES
 
@@ -1085,6 +1405,7 @@ private fun NexusApp() {
                                                         ).show()
                                                     }
                                                 ) {
+
                                                     Text(
                                                         if (sinhala)
                                                             "සටහන්"
@@ -1098,6 +1419,7 @@ private fun NexusApp() {
                                                         savedScripts.removeAt(index)
                                                     }
                                                 ) {
+
                                                     Text(
                                                         if (sinhala)
                                                             "මකන්න"
@@ -1117,22 +1439,21 @@ private fun NexusApp() {
 
                     Tab.MEMORY -> {
 
-                        ScreenTitle(
-                            if (sinhala)
-                                "NEXUS Smart Memory"
-                            else
-                                "NEXUS Smart Memory"
-                        )
+                        ScreenTitle("NEXUS Smart Memory")
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(22.dp)
                         ) {
-                            Column(Modifier.padding(16.dp)) {
+
+                            Column(
+                                Modifier.padding(16.dp)
+                            ) {
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+
                                     Icon(
                                         Icons.Default.Psychology,
                                         null,
@@ -1166,7 +1487,9 @@ private fun NexusApp() {
 
                                 OutlinedTextField(
                                     value = memoryText,
-                                    onValueChange = { memoryText = it },
+                                    onValueChange = {
+                                        memoryText = it
+                                    },
                                     modifier = Modifier.fillMaxWidth(),
                                     placeholder = {
                                         Text(
@@ -1184,9 +1507,11 @@ private fun NexusApp() {
 
                                 Button(
                                     onClick = {
+
                                         val value = memoryText.trim()
 
                                         if (value.isNotBlank()) {
+
                                             if (memories.none { it == value }) {
                                                 memories.add(0, value)
                                             }
@@ -1206,8 +1531,11 @@ private fun NexusApp() {
                                     enabled = memoryText.isNotBlank(),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
+
                                     Icon(Icons.Default.Add, null)
+
                                     Spacer(Modifier.width(8.dp))
+
                                     Text(
                                         if (sinhala)
                                             "මතකයට සුරකින්න"
@@ -1236,9 +1564,10 @@ private fun NexusApp() {
                             LazyColumn(
                                 modifier = Modifier.heightIn(max = 220.dp)
                             ) {
+
                                 itemsIndexed(
                                     pendingMemories.toList()
-                                ) { index, suggestion ->
+                                ) { _, suggestion ->
 
                                     Card(
                                         Modifier
@@ -1246,7 +1575,10 @@ private fun NexusApp() {
                                             .padding(vertical = 4.dp),
                                         shape = RoundedCornerShape(16.dp)
                                     ) {
-                                        Column(Modifier.padding(12.dp)) {
+
+                                        Column(
+                                            Modifier.padding(12.dp)
+                                        ) {
 
                                             Text(suggestion)
 
@@ -1254,11 +1586,13 @@ private fun NexusApp() {
                                                 Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.End
                                             ) {
+
                                                 TextButton(
                                                     onClick = {
                                                         pendingMemories.remove(suggestion)
                                                     }
                                                 ) {
+
                                                     Text(
                                                         if (sinhala)
                                                             "ප්‍රතික්ෂේප කරන්න"
@@ -1272,6 +1606,7 @@ private fun NexusApp() {
                                                         approveMemory(suggestion)
                                                     }
                                                 ) {
+
                                                     Icon(
                                                         Icons.Default.CheckCircle,
                                                         null,
@@ -1297,6 +1632,7 @@ private fun NexusApp() {
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+
                             Text(
                                 if (sinhala)
                                     "සුරැකි මතකයන්"
@@ -1327,8 +1663,13 @@ private fun NexusApp() {
 
                         } else {
 
-                            LazyColumn(Modifier.weight(1f)) {
-                                itemsIndexed(memories.toList()) { index, memory ->
+                            LazyColumn(
+                                Modifier.weight(1f)
+                            ) {
+
+                                itemsIndexed(
+                                    memories.toList()
+                                ) { index, memory ->
 
                                     Card(
                                         Modifier
@@ -1336,11 +1677,15 @@ private fun NexusApp() {
                                             .padding(vertical = 5.dp),
                                         shape = RoundedCornerShape(17.dp)
                                     ) {
-                                        Column(Modifier.padding(13.dp)) {
+
+                                        Column(
+                                            Modifier.padding(13.dp)
+                                        ) {
 
                                             Row(
                                                 verticalAlignment = Alignment.Top
                                             ) {
+
                                                 Icon(
                                                     Icons.Default.Lightbulb,
                                                     null,
@@ -1359,6 +1704,7 @@ private fun NexusApp() {
                                                 Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.End
                                             ) {
+
                                                 TextButton(
                                                     onClick = {
                                                         copyText(memory)
@@ -1369,10 +1715,12 @@ private fun NexusApp() {
 
                                                 TextButton(
                                                     onClick = {
+
                                                         memoryText = memory
                                                         memories.removeAt(index)
                                                     }
                                                 ) {
+
                                                     Text(
                                                         if (sinhala)
                                                             "සංස්කරණය"
@@ -1386,6 +1734,7 @@ private fun NexusApp() {
                                                         memories.removeAt(index)
                                                     }
                                                 ) {
+
                                                     Text(
                                                         if (sinhala)
                                                             "මකන්න"
@@ -1427,6 +1776,7 @@ private fun NexusApp() {
                         ) {
 
                             try {
+
                                 val start =
                                     System.currentTimeMillis() +
                                         60 * 60 * 1000
@@ -1436,6 +1786,7 @@ private fun NexusApp() {
                                 val intent = Intent(
                                     Intent.ACTION_INSERT
                                 ).apply {
+
                                     data = CalendarContract.Events.CONTENT_URI
 
                                     putExtra(
@@ -1462,6 +1813,7 @@ private fun NexusApp() {
                                 context.startActivity(intent)
 
                             } catch (e: Exception) {
+
                                 Toast.makeText(
                                     context,
                                     "Calendar Error: ${e.message}",
@@ -1472,6 +1824,7 @@ private fun NexusApp() {
 
                         ToolCard(
                             title = "Camera",
+
                             description = if (sinhala)
                                 "දුරකථනයේ Camera යෙදුම විවෘත කරන්න."
                             else
@@ -1481,10 +1834,13 @@ private fun NexusApp() {
                         ) {
 
                             try {
+
                                 cameraLauncher.launch(
                                     Intent(MediaStore.ACTION_IMAGE_CAPTURE)
                                 )
+
                             } catch (_: Exception) {
+
                                 Toast.makeText(
                                     context,
                                     "Camera unavailable.",
@@ -1510,11 +1866,16 @@ private fun NexusApp() {
                             shape = RoundedCornerShape(24.dp)
                         ) {
 
-                            Column(Modifier.padding(18.dp)) {
+                            Column(
+                                Modifier.padding(18.dp)
+                            ) {
+
+                                // LANGUAGE
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+
                                     Icon(
                                         Icons.Default.Language,
                                         null,
@@ -1535,24 +1896,33 @@ private fun NexusApp() {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+
                                     Text("සිංහල")
+
                                     Spacer(Modifier.width(10.dp))
 
                                     Switch(
                                         checked = sinhala,
-                                        onCheckedChange = { sinhala = it }
+                                        onCheckedChange = {
+                                            sinhala = it
+                                        }
                                     )
 
                                     Spacer(Modifier.width(10.dp))
+
                                     Text("English")
                                 }
 
                                 HorizontalDivider()
+
                                 Spacer(Modifier.height(16.dp))
+
+                                // APPEARANCE
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+
                                     Icon(
                                         Icons.Default.Palette,
                                         null,
@@ -1573,6 +1943,7 @@ private fun NexusApp() {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+
                                     Text(
                                         if (dark)
                                             "Dark Mode"
@@ -1584,16 +1955,107 @@ private fun NexusApp() {
 
                                     Switch(
                                         checked = dark,
-                                        onCheckedChange = { dark = it }
+                                        onCheckedChange = {
+                                            dark = it
+                                        }
                                     )
                                 }
 
                                 HorizontalDivider()
+
                                 Spacer(Modifier.height(16.dp))
+
+                                // NEXUS VOICE ENGINE
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+
+                                    Icon(
+                                        if (voiceEngineEnabled)
+                                            Icons.Default.Mic
+                                        else
+                                            Icons.Default.MicOff,
+                                        null,
+                                        tint = if (voiceEngineEnabled)
+                                            Color(0xFF39D98A)
+                                        else
+                                            NexusCyan,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+
+                                    Spacer(Modifier.width(10.dp))
+
+                                    Column(
+                                        Modifier.weight(1f)
+                                    ) {
+
+                                        Text(
+                                            "NEXUS Voice Engine",
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        Text(
+                                            if (voiceEngineEnabled) {
+                                                if (sinhala)
+                                                    "Voice Engine ක්‍රියාත්මකයි"
+                                                else
+                                                    "Voice Engine Active"
+                                            } else {
+                                                if (sinhala)
+                                                    "Voice Engine අක්‍රියයි"
+                                                else
+                                                    "Voice Engine Disabled"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Switch(
+                                        checked = voiceEngineEnabled,
+                                        onCheckedChange = { enabled ->
+
+                                            if (enabled) {
+                                                startVoiceEngine()
+                                            } else {
+                                                stopVoiceEngine()
+                                            }
+                                        }
+                                    )
+                                }
+
+                                if (voicePermissionDenied) {
+
+                                    Text(
+                                        if (sinhala)
+                                            "Voice Engine භාවිතයට Microphone අවසරය ලබා දෙන්න."
+                                        else
+                                            "Microphone permission is required to use Voice Engine.",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+
+                                Text(
+                                    if (sinhala)
+                                        "Switch එක ON කළ විට NEXUS Voice Engine ආරම්භ වේ. OFF කළ විට එය නතර වේ."
+                                    else
+                                        "Turn ON to start the NEXUS Voice Engine. Turn OFF to stop it.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                HorizontalDivider()
+
+                                Spacer(Modifier.height(16.dp))
+
+                                // DATA SECURITY
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+
                                     Icon(
                                         Icons.Default.Security,
                                         null,
@@ -1626,6 +2088,8 @@ private fun NexusApp() {
 
                                 Spacer(Modifier.height(18.dp))
 
+                                // APP INFORMATION
+
                                 Box(
                                     Modifier
                                         .fillMaxWidth()
@@ -1641,7 +2105,9 @@ private fun NexusApp() {
                                         )
                                         .padding(16.dp)
                                 ) {
+
                                     Column {
+
                                         Text(
                                             "NEXUS AI",
                                             color = Color.White,
@@ -1683,11 +2149,16 @@ private fun NexusLogo(size: Int) {
             .clip(RoundedCornerShape(17.dp))
             .background(
                 Brush.linearGradient(
-                    listOf(NexusBlue, NexusPurple, NexusCyan)
+                    listOf(
+                        NexusBlue,
+                        NexusPurple,
+                        NexusCyan
+                    )
                 )
             ),
         contentAlignment = Alignment.Center
     ) {
+
         Text(
             "N",
             color = Color.White,
@@ -1722,9 +2193,11 @@ private fun EmptyState(
             .padding(vertical = 60.dp),
         contentAlignment = Alignment.Center
     ) {
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
             Icon(
                 icon,
                 null,
