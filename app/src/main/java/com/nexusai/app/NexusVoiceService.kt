@@ -32,15 +32,15 @@ class NexusVoiceService : Service() {
             "com.nexusai.app.extra.VOICE_LANGUAGE"
     }
 
-    private var recognizer: SpeechRecognizer? = null
-
     private val handler = Handler(Looper.getMainLooper())
 
     private val channelId = "nexus_voice_channel"
     private val notificationId = 1001
 
+    private var recognizer: SpeechRecognizer? = null
     private var serviceRunning = false
     private var recognitionLanguage = "en-US"
+    private var retryCount = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -57,16 +57,16 @@ class NexusVoiceService : Service() {
 
             ACTION_STOP -> {
                 stopVoiceEngine()
-                stopSelf(startId)
+                stopSelf()
                 return START_NOT_STICKY
             }
 
             ACTION_START -> {
-                // Continue below.
+                // Continue.
             }
 
             else -> {
-                stopSelf(startId)
+                stopSelf()
                 return START_NOT_STICKY
             }
         }
@@ -76,56 +76,71 @@ class NexusVoiceService : Service() {
         }
 
         if (!hasMicrophonePermission()) {
-            showMessage("NEXUS: Microphone permission required.")
-            stopSelf(startId)
+            showMessage("Microphone permission required.")
+            stopSelf()
             return START_NOT_STICKY
         }
 
         recognitionLanguage =
-            intent?.getStringExtra(EXTRA_LANGUAGE) ?: "en-US"
-
-        val notification = Notification.Builder(this, channelId)
-            .setContentTitle("NEXUS AI")
-            .setContentText("NEXUS Voice Engine ක්‍රියාත්මකයි")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setOngoing(true)
-            .build()
+            intent.getStringExtra(EXTRA_LANGUAGE) ?: "en-US"
 
         try {
 
+            val notification = Notification.Builder(
+                this,
+                channelId
+            )
+                .setContentTitle("NEXUS AI")
+                .setContentText("NEXUS Voice Engine ක්‍රියාත්මකයි")
+                .setSmallIcon(
+                    android.R.drawable.ic_btn_speak_now
+                )
+                .setOngoing(true)
+                .build()
+
             if (Build.VERSION.SDK_INT >= 29) {
+
                 startForeground(
                     notificationId,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 )
+
             } else {
-                startForeground(notificationId, notification)
+
+                startForeground(
+                    notificationId,
+                    notification
+                )
             }
 
             serviceRunning = true
+            retryCount = 0
+
             beginRecognitionSession()
 
         } catch (e: SecurityException) {
 
-            showMessage("NEXUS: Microphone access unavailable.")
+            showMessage("Microphone access unavailable.")
             stopVoiceEngine()
-            stopSelf(startId)
+            stopSelf()
 
         } catch (e: Exception) {
 
             showMessage("NEXUS Voice Engine could not start.")
             stopVoiceEngine()
-            stopSelf(startId)
+            stopSelf()
         }
 
         return START_NOT_STICKY
     }
 
     private fun hasMicrophonePermission(): Boolean {
+
         return Build.VERSION.SDK_INT < 23 ||
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
+            checkSelfPermission(
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun createNotificationChannel() {
@@ -137,7 +152,7 @@ class NexusVoiceService : Service() {
                 "NEXUS Voice Engine",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "NEXUS Wake Word Listening"
+                description = "NEXUS Voice Recognition Service"
             }
 
             val manager =
@@ -152,7 +167,7 @@ class NexusVoiceService : Service() {
         if (!serviceRunning) return
 
         if (!hasMicrophonePermission()) {
-            showMessage("NEXUS: Microphone permission missing.")
+            showMessage("Microphone permission missing.")
             stopSelf()
             return
         }
@@ -176,7 +191,9 @@ class NexusVoiceService : Service() {
             currentRecognizer.setRecognitionListener(
                 object : RecognitionListener {
 
-                    override fun onReadyForSpeech(params: Bundle?) {}
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        retryCount = 0
+                    }
 
                     override fun onBeginningOfSpeech() {}
 
@@ -187,7 +204,19 @@ class NexusVoiceService : Service() {
                     override fun onEndOfSpeech() {}
 
                     override fun onError(error: Int) {
+
                         if (recognizer !== currentRecognizer) return
+
+                        if (
+                            error ==
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
+                        ) {
+                            showMessage("Microphone permission denied.")
+                            stopVoiceEngine()
+                            stopSelf()
+                            return
+                        }
+
                         restartRecognition()
                     }
 
@@ -211,6 +240,7 @@ class NexusVoiceService : Service() {
                             showMessage("NEXUS අවදි වුණා! 💙")
                         }
 
+                        retryCount = 0
                         restartRecognition()
                     }
 
@@ -240,14 +270,31 @@ class NexusVoiceService : Service() {
                 )
 
                 putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
+                    recognitionLanguage
+                )
+
+                putExtra(
                     RecognizerIntent.EXTRA_PARTIAL_RESULTS,
                     true
+                )
+
+                putExtra(
+                    RecognizerIntent.EXTRA_MAX_RESULTS,
+                    3
                 )
             }
 
             currentRecognizer.startListening(speechIntent)
 
-        } catch (_: Exception) {
+        } catch (e: SecurityException) {
+
+            showMessage("Microphone access unavailable.")
+            stopVoiceEngine()
+            stopSelf()
+
+        } catch (e: Exception) {
+
             restartRecognition()
         }
     }
@@ -266,13 +313,20 @@ class NexusVoiceService : Service() {
 
         recognizer = null
 
+        retryCount++
+
+        val delay = minOf(
+            1000L * retryCount,
+            5000L
+        )
+
         handler.postDelayed({
 
             if (serviceRunning) {
                 beginRecognitionSession()
             }
 
-        }, 1200)
+        }, delay)
     }
 
     private fun stopVoiceEngine() {
