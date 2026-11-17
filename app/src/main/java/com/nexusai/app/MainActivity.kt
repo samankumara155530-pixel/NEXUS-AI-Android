@@ -2473,7 +2473,14 @@ internal fun NexusApp(accessToken: String) {
                             if (sinhala) "Location සහ Notifications" else "Location and Notifications",
                             if (sinhala) "Security, Permissions සහ සම්පූර්ණ පරීක්ෂණ" else "Security, Permissions and full testing"
                         )
-                        val completed = remember { mutableStateListOf<Int>() }
+                        val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
+                        val completed = remember {
+                            mutableStateListOf<Int>().apply {
+                                addAll(roadmapPrefs.getStringSet("completed_items", emptySet())
+                                    .mapNotNull { it.toIntOrNull() }
+                                    .filter { it in roadmap.indices })
+                            }
+                        }
                         ScreenTitle(if (sinhala) "NEXUS ව්‍යාපෘති ප්‍රගතිය" else "NEXUS Project Progress")
                         Text(
                             if (sinhala) "අපගේ Remote Control වැඩ සැලැස්ම මෙතැනින් නිරීක්ෂණය කරන්න." else "Track the NEXUS Remote Control roadmap here.",
@@ -2499,6 +2506,9 @@ internal fun NexusApp(accessToken: String) {
                                             onCheckedChange = { checked ->
                                                 if (checked && index !in completed) completed.add(index)
                                                 else completed.remove(index)
+                                                roadmapPrefs.edit()
+                                                    .putStringSet("completed_items", completed.map { it.toString() }.toSet())
+                                                    .apply()
                                             }
                                         )
                                         Text(item, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -2506,7 +2516,7 @@ internal fun NexusApp(accessToken: String) {
                                     if (index != roadmap.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                                 }
                                 Text(
-                                    if (sinhala) "සටහන: මෙහි සලකුණු ඔබගේ දුරකථනයේ මෙම පිටුවේ තාවකාලිකයි. GitHub හි වැඩ අවසන් බව ස්වයංක්‍රීයව තහවුරු නොකරයි." else "Note: These checkmarks are local to this page session; they do not automatically verify GitHub implementation status.",
+                                    if (sinhala) "ඔබගේ සලකුණු මෙම දුරකථනයේ ස්ථිරව සුරැකේ. ඒවා GitHub හි වැඩ අවසන් බව ස්වයංක්‍රීයව තහවුරු නොකරයි." else "Your checkmarks are saved on this device and do not automatically verify implementation status in GitHub.",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary
                                 )
