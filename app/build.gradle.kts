@@ -13,8 +13,35 @@ android {
         applicationId = "com.nexusai.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        // Increase versionCode for every installable update.
+        versionCode = 4
+        versionName = "1.3.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            val storePath = System.getenv("NEXUS_KEYSTORE_PATH")
+            val storePass = System.getenv("NEXUS_KEYSTORE_PASSWORD")
+            val keyAliasValue = System.getenv("NEXUS_KEY_ALIAS")
+            val keyPass = System.getenv("NEXUS_KEY_PASSWORD")
+            if (!storePath.isNullOrBlank() &&
+                !storePass.isNullOrBlank() &&
+                !keyAliasValue.isNullOrBlank() &&
+                !keyPass.isNullOrBlank()
+            ) {
+                storeFile = file(storePath)
+                storePassword = storePass
+                keyAlias = keyAliasValue
+                keyPassword = keyPass
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
