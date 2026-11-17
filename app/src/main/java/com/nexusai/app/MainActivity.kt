@@ -1999,7 +1999,7 @@ internal fun NexusApp(accessToken: String) {
                                 val calendarIntent = Intent(Intent.ACTION_INSERT).apply {
                                     setDataAndType(
                                         CalendarContract.Events.CONTENT_URI,
-                                        CalendarContract.Events.CONTENT_ITEM_TYPE
+                                        "vnd.android.cursor.item/event"
                                     )
                                     putExtra(CalendarContract.Events.TITLE, "NEXUS AI Event")
                                     putExtra(
