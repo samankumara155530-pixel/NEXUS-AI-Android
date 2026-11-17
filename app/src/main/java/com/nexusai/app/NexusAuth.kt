@@ -128,7 +128,7 @@ internal object NexusAuthManager {
         return try {
             refreshWithToken(context, refresh)
         } catch (_: Exception) {
-            clearSession(context)
+            // Keep the encrypted refresh token during temporary network failures.
             null
         }
     }
@@ -173,6 +173,7 @@ internal fun NexusRoot() {
         checkingSession = false
     }
 
+    MaterialTheme {
     when {
         checkingSession -> Surface(
             modifier = Modifier.fillMaxSize(),
@@ -210,6 +211,7 @@ internal fun NexusRoot() {
                 }
             }
         )
+    }
     }
 }
 
