@@ -46,6 +46,20 @@
                 android:mimeType="vnd.android.cursor.item/event" />
         </intent>
 
+        <intent>
+            <action
+                android:name="android.intent.action.VIEW" />
+            <data
+                android:scheme="content" />
+        </intent>
+
+        <intent>
+            <action
+                android:name="android.intent.action.MAIN" />
+            <category
+                android:name="android.intent.category.APP_CALENDAR" />
+        </intent>
+
     </queries>
 
     <!-- APPLICATION -->
