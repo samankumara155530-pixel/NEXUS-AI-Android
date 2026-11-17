@@ -743,6 +743,28 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    // Restore heartbeat scheduling for installations that were paired
+    // before this WorkManager feature was introduced.
+    LaunchedEffect(accessToken) {
+        try {
+            val result = deviceApiGet("devices")
+            val list = result.optJSONArray("devices") ?: JSONArray()
+            val localDeviceId = getStableDeviceId(context)
+            val isAlreadyPaired = (0 until list.length()).any { index ->
+                val device = list.optJSONObject(index) ?: JSONObject()
+                val remoteId = device.optString("device_id").ifBlank {
+                    device.optString("deviceId")
+                }
+                remoteId.equals(localDeviceId, ignoreCase = true)
+            }
+            if (isAlreadyPaired) {
+                NexusHeartbeatWorker.enable(context)
+            }
+        } catch (_: Exception) {
+            // A temporary network/auth failure must not block app startup.
+        }
+    }
+
     LaunchedEffect(tab) {
         if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
             deviceRequestBusy = true
