@@ -285,7 +285,17 @@ internal fun NexusApp(accessToken: String) {
     }
 
     var sinhala by remember {
-        mutableStateOf(true)
+        mutableStateOf(
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean("nexus_sinhala_language", true)
+        )
+    }
+
+    LaunchedEffect(sinhala) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("nexus_sinhala_language", sinhala)
+            .apply()
     }
 
     var tab by remember {
@@ -892,9 +902,9 @@ internal fun NexusApp(accessToken: String) {
 
                                 Text(
                                     if (sinhala)
-                                        "ඔබේ පුද්ගලික AI සහායකයා"
+                                        "ඔබේ බුද්ධිමත් පුද්ගලික සහායකයා"
                                     else
-                                        "Your Personal AI Assistant",
+                                        "Your Intelligent Personal Assistant",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1051,9 +1061,9 @@ internal fun NexusApp(accessToken: String) {
 
                                     Text(
                                         if (sinhala)
-                                            "NEXUS සහායකයා"
+                                            "NEXUS AI සහායකයා"
                                         else
-                                            "NEXUS Assistant",
+                                            "NEXUS AI Assistant",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.titleLarge
                                     )
@@ -2243,7 +2253,7 @@ internal fun NexusApp(accessToken: String) {
                                         )
 
                                         Text(
-                                            "Personal AI Assistant",
+                                            "Personal Intelligence • Secure Workspace",
                                             color = Color.White
                                         )
 
