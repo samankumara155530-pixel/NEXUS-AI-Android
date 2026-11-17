@@ -271,7 +271,17 @@ internal fun NexusApp(accessToken: String) {
     val scope = rememberCoroutineScope()
 
     var dark by remember {
-        mutableStateOf(true)
+        mutableStateOf(
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean("nexus_dark_theme", true)
+        )
+    }
+
+    LaunchedEffect(dark) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("nexus_dark_theme", dark)
+            .apply()
     }
 
     var sinhala by remember {
@@ -2263,24 +2273,53 @@ private fun NexusLogo(size: Int) {
     Box(
         modifier = Modifier
             .size(size.dp)
-            .clip(RoundedCornerShape(17.dp))
+            .clip(RoundedCornerShape((size * 0.34f).dp))
             .background(
                 Brush.linearGradient(
-                    listOf(
-                        NexusBlue,
-                        NexusPurple,
-                        NexusCyan
+                    colors = listOf(
+                        Color(0xFF07152F),
+                        Color(0xFF173B79),
+                        Color(0xFF4A2B83)
                     )
+                )
+            )
+            .then(
+                Modifier
+                    .padding((size * 0.035f).dp)
+            )
+            .clip(RoundedCornerShape((size * 0.30f).dp))
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(NexusCyan.copy(alpha = 0.20f), NexusBlue.copy(alpha = 0.10f))
                 )
             ),
         contentAlignment = Alignment.Center
     ) {
-
-        Text(
-            "N",
-            color = Color.White,
-            fontWeight = FontWeight.Black,
-            style = MaterialTheme.typography.headlineMedium
+        Box(
+            modifier = Modifier
+                .fillMaxSize(0.78f)
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(NexusBlue, NexusPurple, NexusCyan)
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "N",
+                color = Color.White,
+                fontWeight = FontWeight.Black,
+                style = MaterialTheme.typography.headlineMedium
+            )
+        }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding((size * 0.13f).dp)
+                .size((size * 0.13f).dp)
+                .clip(CircleShape)
+                .background(Color.White)
         )
     }
 }
