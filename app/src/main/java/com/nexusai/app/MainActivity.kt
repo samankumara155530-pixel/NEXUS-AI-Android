@@ -18,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -2390,6 +2391,17 @@ private fun NexusLogo(size: Int) {
             ),
         contentAlignment = Alignment.Center
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize(0.94f)
+                .border(
+                    1.5.dp,
+                    Brush.sweepGradient(
+                        listOf(NexusCyan, NexusPurple, NexusBlue, NexusCyan)
+                    ),
+                    CircleShape
+                )
+        )
         Box(
             modifier = Modifier
                 .fillMaxSize(0.78f)
