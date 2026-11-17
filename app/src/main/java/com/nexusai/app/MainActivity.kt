@@ -481,6 +481,10 @@ internal fun NexusApp(accessToken: String) {
         mutableStateOf("")
     }
 
+    var calendarEventTitle by remember {
+        mutableStateOf("")
+    }
+
     var prompt by remember {
         mutableStateOf("")
     }
@@ -615,6 +619,20 @@ internal fun NexusApp(accessToken: String) {
                 "Camera වෙතින් ආපසු පැමිණියා."
             else
                 "Returned from Camera.",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        Toast.makeText(
+            context,
+            if (uri != null) {
+                if (sinhala) "Gallery ඡායාරූපය තෝරාගත්තා." else "Image selected from Gallery."
+            } else {
+                if (sinhala) "ඡායාරූපයක් තෝරා නැහැ." else "No image selected."
+            },
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -1978,6 +1996,21 @@ internal fun NexusApp(accessToken: String) {
                                 "NEXUS Tools"
                         )
 
+                        OutlinedTextField(
+                            value = calendarEventTitle,
+                            onValueChange = { calendarEventTitle = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = {
+                                Text(if (sinhala) "සිදුවීමේ නම" else "Event title")
+                            },
+                            placeholder = {
+                                Text(if (sinhala) "උදා: වෛද්‍ය හමුව" else "e.g. Doctor appointment")
+                            }
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
                         ToolCard(
                             title = if (sinhala)
                                 "දිනදර්ශන සිදුවීමක් එක් කරන්න"
@@ -2001,7 +2034,10 @@ internal fun NexusApp(accessToken: String) {
                                         CalendarContract.Events.CONTENT_URI,
                                         "vnd.android.cursor.item/event"
                                     )
-                                    putExtra(CalendarContract.Events.TITLE, "NEXUS AI Event")
+                                    putExtra(
+                                        CalendarContract.Events.TITLE,
+                                        calendarEventTitle.trim().ifBlank { "NEXUS AI Event" }
+                                    )
                                     putExtra(
                                         CalendarContract.Events.DESCRIPTION,
                                         "Added using NEXUS AI."
@@ -2060,6 +2096,24 @@ internal fun NexusApp(accessToken: String) {
                                 Toast.makeText(
                                     context,
                                     "Camera unavailable.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        ToolCard(
+                            title = if (sinhala) "Gallery වෙතින් ඡායාරූපයක් තෝරන්න" else "Choose from Gallery",
+                            description = if (sinhala) "දුරකථනයේ Gallery එකෙන් ඡායාරූපයක් තෝරන්න." else "Select an image from your phone's Gallery.",
+                            icon = Icons.Default.PhotoLibrary
+                        ) {
+                            try {
+                                galleryLauncher.launch("image/*")
+                            } catch (_: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    if (sinhala) "Gallery විවෘත කළ නොහැක." else "Gallery is unavailable.",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
