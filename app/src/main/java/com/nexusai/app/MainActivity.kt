@@ -485,6 +485,11 @@ internal fun NexusApp(accessToken: String) {
         mutableStateOf("")
     }
 
+    var devicePairCode by remember { mutableStateOf("") }
+    var deviceClaimCode by remember { mutableStateOf("") }
+    var deviceStatusMessage by remember { mutableStateOf("") }
+    var deviceRequestBusy by remember { mutableStateOf(false) }
+
     var prompt by remember {
         mutableStateOf("")
     }
@@ -657,6 +662,37 @@ internal fun NexusApp(accessToken: String) {
             if (sinhala) "Copy කළා." else "Copied.",
             Toast.LENGTH_SHORT
         ).show()
+    }
+
+    suspend fun deviceApiPost(
+        route: String,
+        payload: JSONObject
+    ): JSONObject = withContext(Dispatchers.IO) {
+        val connection = (
+            URL("https://nexus-ai-backend-six.vercel.app/$route")
+                .openConnection() as HttpURLConnection
+        )
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 15000
+            connection.readTimeout = 20000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $accessToken")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use {
+                it.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = JSONObject(response.ifBlank { "{}" })
+            if (status !in 200..299) {
+                throw IllegalStateException(json.optString("error", "HTTP $status"))
+            }
+            json
+        } finally {
+            connection.disconnect()
+        }
     }
 
     // SAVE SCRIPT
@@ -1995,6 +2031,105 @@ internal fun NexusApp(accessToken: String) {
                             else
                                 "NEXUS Tools"
                         )
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(22.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Devices, null, tint = NexusCyan)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        if (sinhala) "NEXUS Device Link" else "NEXUS Device Link",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    if (sinhala)
+                                        "දෙවන දුරකථනයේත් එකම NEXUS ගිණුමෙන් ඇතුළු වී Pair කිරීමේ කේතය භාවිත කරන්න. කේතය මිනිත්තු 5කින් කල් ඉකුත් වේ."
+                                    else
+                                        "Sign in with the same NEXUS account on your second phone and use the pairing code. Codes expire after 5 minutes.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Button(
+                                    enabled = !deviceRequestBusy,
+                                    onClick = {
+                                        scope.launch {
+                                            deviceRequestBusy = true
+                                            try {
+                                                val result = deviceApiPost(
+                                                    "devices/pair/start",
+                                                    JSONObject().put("deviceName", android.os.Build.MODEL)
+                                                )
+                                                devicePairCode = result.optString("pairingCode")
+                                                deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
+                                            } catch (e: Exception) {
+                                                deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
+                                            } finally {
+                                                deviceRequestBusy = false
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Icon(Icons.Default.QrCode, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (sinhala) "Pairing කේතයක් ලබාගන්න" else "Generate pairing code")
+                                }
+                                if (devicePairCode.isNotBlank()) {
+                                    Text(
+                                        devicePairCode,
+                                        style = MaterialTheme.typography.headlineMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = NexusCyan
+                                    )
+                                    TextButton(onClick = { copyText(devicePairCode) }) {
+                                        Text(if (sinhala) "කේතය Copy කරන්න" else "Copy code")
+                                    }
+                                }
+                                OutlinedTextField(
+                                    value = deviceClaimCode,
+                                    onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    label = { Text(if (sinhala) "අනෙක් දුරකථනයේ Pairing කේතය" else "Pairing code from other phone") }
+                                )
+                                OutlinedButton(
+                                    enabled = !deviceRequestBusy && deviceClaimCode.length == 8,
+                                    onClick = {
+                                        scope.launch {
+                                            deviceRequestBusy = true
+                                            try {
+                                                deviceApiPost(
+                                                    "devices/pair/claim",
+                                                    JSONObject()
+                                                        .put("pairingCode", deviceClaimCode)
+                                                        .put("deviceName", android.os.Build.MODEL)
+                                                )
+                                                deviceClaimCode = ""
+                                                deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
+                                            } catch (e: Exception) {
+                                                deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
+                                            } finally {
+                                                deviceRequestBusy = false
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(if (sinhala) "මෙම දුරකථනය Pair කරන්න" else "Pair this phone")
+                                }
+                                if (deviceStatusMessage.isNotBlank()) {
+                                    Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
+                                }
+                            }
+                        }
 
                         OutlinedTextField(
                             value = calendarEventTitle,
