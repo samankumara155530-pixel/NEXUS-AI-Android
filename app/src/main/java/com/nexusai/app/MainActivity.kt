@@ -1889,13 +1889,46 @@ private fun NexusApp() {
                                     )
                                 }
 
-                                context.startActivity(intent)
+                                val calendarHandler = intent.resolveActivity(
+                                    context.packageManager
+                                )
 
-                            } catch (e: Exception) {
+                                if (calendarHandler == null) {
+                                    Toast.makeText(
+                                        context,
+                                        if (sinhala)
+                                            "Calendar යෙදුමක් සොයාගත නොහැක. දුරකථනයට Calendar යෙදුමක් ස්ථාපනය කරන්න."
+                                        else
+                                            "No compatible Calendar app found. Please install a Calendar app.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    val chooser = Intent.createChooser(
+                                        intent,
+                                        if (sinhala)
+                                            "Calendar යෙදුම තෝරන්න"
+                                        else
+                                            "Choose Calendar app"
+                                    )
+                                    context.startActivity(chooser)
+                                }
 
+                            } catch (e: ActivityNotFoundException) {
                                 Toast.makeText(
                                     context,
-                                    "Calendar Error: ${e.message}",
+                                    if (sinhala)
+                                        "Calendar යෙදුම විවෘත කළ නොහැක."
+                                    else
+                                        "Unable to open a Calendar app.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    if (sinhala)
+                                        "Calendar දෝෂය: ${e.localizedMessage ?: "නොදන්නා දෝෂයක්"}"
+                                    else
+                                        "Calendar error: ${e.localizedMessage ?: "Unknown error"}",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
