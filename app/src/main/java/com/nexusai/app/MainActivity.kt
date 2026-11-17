@@ -2473,6 +2473,16 @@ internal fun NexusApp(accessToken: String) {
                             if (sinhala) "Location සහ Notifications" else "Location and Notifications",
                             if (sinhala) "Security, Permissions සහ සම්පූර්ණ පරීක්ෂණ" else "Security, Permissions and full testing"
                         )
+                        val implementationStatus = listOf(
+                            Triple(if (sinhala) "Device Pairing සහ Backend" else "Device Pairing and Backend", if (sinhala) "පවතිනවා" else "Present", true),
+                            Triple(if (sinhala) "Tools / Paired Devices Dashboard" else "Tools / Paired Devices Dashboard", if (sinhala) "මූලික UI එක පවතී" else "Basic UI present", true),
+                            Triple(if (sinhala) "Stable Device ID සහ Duplicate නිවැරදි කිරීම" else "Stable Device ID and duplicate fix", if (sinhala) "තහවුරු කළ යුතුයි" else "Needs verification", false),
+                            Triple(if (sinhala) "Background Connection Service" else "Background Connection Service", if (sinhala) "සැලසුම් අදියර" else "Planned", false),
+                            Triple(if (sinhala) "Remote Camera සහ Photo Capture" else "Remote Camera and Photo Capture", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
+                            Triple(if (sinhala) "Independent Remote Microphone" else "Independent Remote Microphone", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
+                            Triple(if (sinhala) "Screen Sharing / Remote Control" else "Screen Sharing / Remote Control", if (sinhala) "සැලසුම් අදියර" else "Planned", false),
+                            Triple(if (sinhala) "Gallery / Files / Location / Notifications" else "Gallery / Files / Location / Notifications", if (sinhala) "සැලසුම් අදියර" else "Planned", false)
+                        )
                         val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
                         val completed = remember {
                             mutableStateListOf<Int>().apply {
@@ -2482,6 +2492,29 @@ internal fun NexusApp(accessToken: String) {
                             }
                         }
                         ScreenTitle(if (sinhala) "NEXUS ව්‍යාපෘති ප්‍රගතිය" else "NEXUS Project Progress")
+                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(if (sinhala) "සැබෑ සංවර්ධන තත්ත්වය" else "Implementation Status", fontWeight = FontWeight.Bold)
+                                implementationStatus.forEach { item ->
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                        Icon(
+                                            if (item.third) Icons.Default.CheckCircle else Icons.Default.Schedule,
+                                            null,
+                                            tint = if (item.third) Color(0xFF35B779) else MaterialTheme.colorScheme.secondary
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(item.first, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                        Text(item.second, style = MaterialTheme.typography.labelSmall, color = if (item.third) Color(0xFF35B779) else MaterialTheme.colorScheme.secondary)
+                                    }
+                                }
+                                Text(
+                                    if (sinhala) "මෙම තත්ත්වයන් කේතය පරීක්ෂා කර සකස් කළ මූලික වාර්තාවකි; Build සහ දුරකථන පරීක්ෂණවලින් පසුව පමණක් අවසන් බව තහවුරු කරමු." else "This is a conservative code-review snapshot; final completion requires successful builds and device testing.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        }
+
                         Text(
                             if (sinhala) "අපගේ Remote Control වැඩ සැලැස්ම මෙතැනින් නිරීක්ෂණය කරන්න." else "Track the NEXUS Remote Control roadmap here.",
                             style = MaterialTheme.typography.bodySmall,
