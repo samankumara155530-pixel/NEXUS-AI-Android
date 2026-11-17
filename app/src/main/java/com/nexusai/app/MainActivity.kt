@@ -1945,21 +1945,21 @@ internal fun NexusApp(accessToken: String) {
                             try {
                                 // Open the calendar view first; do not create a
                                 // pre-filled event when the user only asks to open Calendar.
+                                // Launch the installed Calendar app using Android's
+                                // standard app category. Fall back to the provider URI
+                                // for calendar apps that expose ACTION_VIEW only.
                                 val calendarIntent = Intent(
+                                    Intent.ACTION_MAIN
+                                ).addCategory(Intent.CATEGORY_APP_CALENDAR)
+
+                                val fallbackIntent = Intent(
                                     Intent.ACTION_VIEW,
                                     CalendarContract.CONTENT_URI
                                 )
 
-                                val fallbackIntent = Intent(
-                                    Intent.ACTION_MAIN
-                                ).addCategory(Intent.CATEGORY_APP_CALENDAR)
-
-                                val handler = calendarIntent.resolveActivity(
-                                    context.packageManager
-                                )
-
                                 when {
-                                    handler != null -> context.startActivity(calendarIntent)
+                                    calendarIntent.resolveActivity(context.packageManager) != null ->
+                                        context.startActivity(calendarIntent)
                                     fallbackIntent.resolveActivity(context.packageManager) != null ->
                                         context.startActivity(fallbackIntent)
                                     else -> Toast.makeText(
