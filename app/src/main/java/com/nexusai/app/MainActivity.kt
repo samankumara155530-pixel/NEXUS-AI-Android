@@ -18,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -270,16 +271,28 @@ internal fun NexusApp(accessToken: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var dark by remember {
+    var themeMode by remember {
         mutableStateOf(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean("nexus_dark_theme", true)
+                .getString("nexus_theme_mode", null)
+                ?: if (
+                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .getBoolean("nexus_dark_theme", true)
+                ) "dark" else "light"
         )
     }
 
-    LaunchedEffect(dark) {
+    val systemDark = isSystemInDarkTheme()
+    val dark = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDark
+    }
+
+    LaunchedEffect(themeMode, systemDark) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
+            .putString("nexus_theme_mode", themeMode)
             .putBoolean("nexus_dark_theme", dark)
             .apply()
     }
@@ -916,7 +929,7 @@ internal fun NexusApp(accessToken: String) {
 
                         IconButton(
                             onClick = {
-                                dark = !dark
+                                themeMode = if (dark) "light" else "dark"
                             }
                         ) {
 
@@ -2108,22 +2121,28 @@ internal fun NexusApp(accessToken: String) {
                                 }
 
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-
-                                    Text(
-                                        if (dark)
-                                            "Dark Mode"
-                                        else
-                                            "Light Mode"
+                                    FilterChip(
+                                        selected = themeMode == "system",
+                                        onClick = { themeMode = "system" },
+                                        label = {
+                                            Text(if (sinhala) "පද්ධතිය" else "System")
+                                        }
                                     )
-
-                                    Spacer(Modifier.weight(1f))
-
-                                    Switch(
-                                        checked = dark,
-                                        onCheckedChange = {
-                                            dark = it
+                                    FilterChip(
+                                        selected = themeMode == "light",
+                                        onClick = { themeMode = "light" },
+                                        label = {
+                                            Text(if (sinhala) "ආලෝක" else "Light")
+                                        }
+                                    )
+                                    FilterChip(
+                                        selected = themeMode == "dark",
+                                        onClick = { themeMode = "dark" },
+                                        label = {
+                                            Text(if (sinhala) "අඳුරු" else "Dark")
                                         }
                                     )
                                 }
