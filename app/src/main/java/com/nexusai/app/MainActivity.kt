@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            NexusApp()
+            NexusRoot()
         }
     }
 }
@@ -119,7 +119,7 @@ private fun getEncryptionKey(): SecretKey {
     return generator.generateKey()
 }
 
-private fun encryptData(value: String): String {
+internal fun encryptData(value: String): String {
 
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
 
@@ -138,7 +138,7 @@ private fun encryptData(value: String): String {
     )
 }
 
-private fun decryptData(value: String): String {
+internal fun decryptData(value: String): String {
 
     val combined = Base64.decode(
         value,
@@ -265,7 +265,7 @@ private enum class Tab {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NexusApp() {
+internal fun NexusApp(accessToken: String) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -737,6 +737,11 @@ private fun NexusApp() {
                                 setRequestProperty(
                                     "Accept",
                                     "application/json"
+                                )
+
+                                setRequestProperty(
+                                    "Authorization",
+                                    "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}"
                                 )
                             }
 
