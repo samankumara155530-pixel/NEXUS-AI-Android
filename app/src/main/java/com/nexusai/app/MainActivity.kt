@@ -2504,8 +2504,8 @@ internal fun NexusApp(accessToken: String) {
                         val implementationStatus = listOf(
                             Triple(if (sinhala) "Device Pairing සහ Backend" else "Device Pairing and Backend", if (sinhala) "පවතිනවා" else "Present", true),
                             Triple(if (sinhala) "Tools / Paired Devices Dashboard" else "Tools / Paired Devices Dashboard", if (sinhala) "මූලික UI එක පවතී" else "Basic UI present", true),
-                            Triple(if (sinhala) "Stable Device ID සහ Duplicate නිවැරදි කිරීම" else "Stable Device ID and duplicate fix", if (sinhala) "තහවුරු කළ යුතුයි" else "Needs verification", false),
-                            Triple(if (sinhala) "Background Connection Service" else "Background Connection Service", if (sinhala) "සැලසුම් අදියර" else "Planned", false),
+                            Triple(if (sinhala) "Stable Device ID සහ Duplicate නිවැරදි කිරීම" else "Stable Device ID and duplicate fix", if (sinhala) "Client ID එක එකතු කළා; Backend ඉතිරියි" else "Client ID added; backend pending", false),
+                            Triple(if (sinhala) "Background Connection Service" else "Background Connection Service", if (sinhala) "Backend heartbeat පසු" else "After backend heartbeat", false),
                             Triple(if (sinhala) "Remote Camera සහ Photo Capture" else "Remote Camera and Photo Capture", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
                             Triple(if (sinhala) "Independent Remote Microphone" else "Independent Remote Microphone", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
                             Triple(if (sinhala) "Screen Sharing / Remote Control" else "Screen Sharing / Remote Control", if (sinhala) "සැලසුම් අදියර" else "Planned", false),
