@@ -1,24 +1,42 @@
-# NEXUS AI Android — v1 project scaffold
+# NEXUS AI Android — v1.4.2
 
-මෙය Android Studio / GitHub Actions මඟින් APK එක build කිරීමට සකස් කළ Kotlin + Jetpack Compose ව්‍යාපෘති මූලිකයයි.
+මෙය Kotlin + Jetpack Compose භාවිතයෙන් සකස් කළ NEXUS AI Android යෙදුමයි. Android APK එක GitHub Actions මඟින් build කර පරීක්ෂා කර ඇත.
 
-## දැනට ඇතුළත්
-- Sinhala-first Android UI
-- Dark / Light mode toggle
-- Sinhala / English UI toggle (මූලික labels)
-- Chat screen UI (AI backend එක තවම සම්බන්ධ කර නැත)
-- Notes screen: සටහන් මේ session එකේ app memory තුළ තාවකාලිකයි; ස්ථිර database එකක් තවම සම්බන්ධ කර නැත
-- Voice input button: Android speech recognizer intent එක අමතයි
-- Camera button: Android camera intent එක අමතයි
-- Calendar button: Calendar insert intent එක අමතයි
-- Settings / Update Center placeholder
+## දැනට ඇතුළත් පහසුකම්
 
-## වැදගත් සීමා
-- මෙය සම්පූර්ණ AI assistant එකක් නොවේ. සැබෑ online AI සඳහා ආරක්ෂිත server/backend සහ API key සැකසුම අවශ්‍යයි.
-- Offline AI model එකක් ඇතුළත් කර නැත.
-- Update Center එක UI placeholder එකකි; server/download/update installation ක්‍රියාකාරී නොවේ.
-- ZIP එක source project එකකි; APK එකක් ලෙස build කර පරීක්ෂා කර ඇති බවට මෙහි ප්‍රකාශයක් නැත.
-- `gradlew` wrapper script/jar මෙහි ඇතුළත් කර නැත. GitHub Actions workflow එක Gradle/Android SDK සකස් කර build කිරීමට උත්සාහ කරයි.
+- Sinhala-first UI සහ Sinhala / English භාෂා මාරු කිරීම
+- Dark / Light theme තේරීම
+- NEXUS AI chat — සම්බන්ධිත backend endpoint වෙත HTTPS නොවන/HTTPS URL සැකසුම අනුව HTTP request යවයි; chat සාර්ථකත්වය backend සහ login token මත රඳා පවතී
+- Chat request එකට පෙර chat history සහ app memory සීමිත ප්‍රමාණයක් යැවීම
+- Notes සහ local app memory පහසුකම්
+- Android speech recognition intent මඟින් voice input
+- Android camera intent මඟින් camera විවෘත කිරීම
+- Calendar insert intent මඟින් පෙර පිරවූ event form එකක් විවෘත කිරීම
+- Settings සහ Update Center UI
 
-## Build
-Android Studio හි project root එක open කර Sync/Build කරන්න, නැතහොත් GitHub repository එකට upload කර Actions workflow එක run කරන්න.
+## Calendar පිළිබඳ සටහන
+
+Calendar බොත්තම Android Calendar event form එකක් විවෘත කරයි. දැනට එය “NEXUS AI Event” යන පෙරනිමි මාතෘකාව සහ ඉදිරි පැයක ආරම්භක වේලාවක් යොදයි. පරිශීලකයා Calendar යෙදුමේදී විස්තර පරීක්ෂා කර Save කළ යුතුය. Chat විධානයකින් ස්වයංක්‍රීයව දිනය/වේලාව විග්‍රහ කර event එකක් සුරැකීම තවම සම්පූර්ණ කර නැත.
+
+## Device Link පිළිබඳ තත්ත්වය
+
+දෙවන Android දුරකථනය Pair කිරීම, දුරස්ථ app launch, සහ අවසර කළමනාකරණය තවම ක්‍රියාත්මක කර නැත. ඒ සඳහා authenticated backend pairing flow එකක්, device registration, සහ අවසර මත පදනම් වූ Android-side actions අවශ්‍ය වේ. Android platform restrictions අනුව Camera, Microphone, Location වැනි සංවේදී පහසුකම් සඳහා අවශ්‍ය පරිශීලක අවසර අනිවාර්ය වේ.
+
+## Update / Signing
+
+- Application ID: `com.nexusai.app`
+- Version: `1.4.2`
+- Version Code: `8`
+- සෑම installable update එකකදීම versionCode වැඩි කළ යුතුය.
+- දැනට ඇති app එකට update install කිරීමට එකම package ID සහ එකම signing key භාවිත කළ යුතුය.
+- Signing secrets GitHub Actions secrets තුළ පමණක් තබාගන්න; keystore/password values source code හෝ chat තුළ ඇතුළත් නොකරන්න.
+
+## Build තත්ත්වය
+
+GitHub Actions run #85 සාර්ථකව අවසන් වී ඇති අතර release APK artifact එක නිර්මාණය වී ඇත. එය සැබෑ දුරකථනයක install කර Calendar, chat, camera, permissions සහ update-installation පරීක්ෂා කිරීම තවම වෙනම කළ යුතුය.
+
+## ආරක්ෂාව
+
+- API keys සහ service-role secrets Android APK තුළ hardcode නොකරන්න.
+- Chat backend එකේ user authentication සහ authorization server-side තහවුරු කළ යුතුය.
+- දෙවන device එකකට commands යැවීමේදී device ownership, explicit pairing, revocation සහ audit log අනිවාර්ය කරන්න.
