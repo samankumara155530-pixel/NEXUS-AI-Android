@@ -72,6 +72,22 @@ private const val KEY_SCRIPTS = "saved_scripts"
 private const val KEY_MEMORIES = "nexus_smart_memories"
 private const val KEY_ALIAS = "NEXUS_AI_ENCRYPTION_KEY"
 
+private const val KEY_STABLE_DEVICE_ID = "stable_device_id"
+
+/**
+ * Stable identifier for this app installation. It is generated once and kept
+ * locally; it is not an IMEI, phone number, or hardware identifier.
+ */
+private fun getStableDeviceId(context: Context): String {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val existing = prefs.getString(KEY_STABLE_DEVICE_ID, null)
+    if (!existing.isNullOrBlank()) return existing
+    val created = java.util.UUID.randomUUID().toString()
+    prefs.edit().putString(KEY_STABLE_DEVICE_ID, created).apply()
+    return created
+}
+
+
 private const val BACKEND_URL =
     "https://nexus-ai-backend-six.vercel.app/chat"
 
@@ -2130,7 +2146,10 @@ internal fun NexusApp(accessToken: String) {
                                             try {
                                                 val result = deviceApiPost(
                                                     "devices/pair/start",
-                                                    JSONObject().put("deviceName", android.os.Build.MODEL)
+                                                    JSONObject()
+                                                        .put("deviceName", android.os.Build.MODEL)
+                                                        .put("deviceId", getStableDeviceId(context))
+                                                        .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
                                                 deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
@@ -2259,8 +2278,17 @@ internal fun NexusApp(accessToken: String) {
                                 } else {
                                     val uniqueDevices = pairedDevices
                                         .groupBy { device ->
-                                            device.optString("device_name", "NEXUS Android").trim().lowercase() +
-                                                "|" + device.optString("platform", "android").lowercase()
+                                            val stableId = device.optString("device_id").ifBlank {
+                                                device.optString("deviceId")
+                                            }
+                                            if (stableId.isNotBlank() && stableId != "null") {
+                                                "device:" + stableId
+                                            } else {
+                                                // Legacy server records have no stable installation ID.
+                                                // Keep their old grouping until the backend migration is deployed.
+                                                device.optString("device_name", "NEXUS Android").trim().lowercase() +
+                                                    "|" + device.optString("platform", "android").lowercase()
+                                            }
                                         }
                                         .values
                                         .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
