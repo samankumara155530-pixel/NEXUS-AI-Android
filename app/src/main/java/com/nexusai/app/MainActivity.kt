@@ -262,6 +262,7 @@ private enum class Tab {
     SAVED,
     MEMORY,
     TOOLS,
+    PROGRESS,
     SETTINGS
 }
 
@@ -2086,6 +2087,18 @@ internal fun NexusApp(accessToken: String) {
                                 "NEXUS Tools"
                         )
 
+                        OutlinedButton(
+                            onClick = { tab = Tab.PROGRESS },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Default.Checklist, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "ව්‍යාපෘති ප්‍රගතිය සහ වැඩ සැලැස්ම" else "Project Progress & Roadmap")
+                            Spacer(Modifier.weight(1f))
+                            Icon(Icons.Default.ChevronRight, null)
+                        }
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(22.dp)
@@ -2446,6 +2459,65 @@ internal fun NexusApp(accessToken: String) {
                     }
 
                     // SETTINGS
+
+                    Tab.PROGRESS -> {
+                        val roadmap = listOf(
+                            if (sinhala) "Stable Device ID සහ Duplicate ගැටලුව ස්ථිරව විසඳීම" else "Stable Device ID and permanent duplicate fix",
+                            if (sinhala) "Camera සහ Microphone වෙන වෙනම පාලනය" else "Independent Camera and Microphone controls",
+                            if (sinhala) "Background Connection Service" else "Background Connection Service",
+                            if (sinhala) "Wi-Fi සහ Mobile Data Auto Reconnection" else "Wi-Fi and Mobile Data auto-reconnection",
+                            if (sinhala) "Remote Camera – Front / Back / Live Preview / Photo" else "Remote Camera – Front / Back / Live Preview / Photo",
+                            if (sinhala) "Remote Microphone – වෙනම Audio Session" else "Remote Microphone – independent audio session",
+                            if (sinhala) "Screen Sharing සහ Remote Control" else "Screen Sharing and Remote Control",
+                            if (sinhala) "Gallery සහ Files Access" else "Gallery and Files Access",
+                            if (sinhala) "Location සහ Notifications" else "Location and Notifications",
+                            if (sinhala) "Security, Permissions සහ සම්පූර්ණ පරීක්ෂණ" else "Security, Permissions and full testing"
+                        )
+                        val completed = remember { mutableStateListOf<Int>() }
+                        ScreenTitle(if (sinhala) "NEXUS ව්‍යාපෘති ප්‍රගතිය" else "NEXUS Project Progress")
+                        Text(
+                            if (sinhala) "අපගේ Remote Control වැඩ සැලැස්ම මෙතැනින් නිරීක්ෂණය කරන්න." else "Track the NEXUS Remote Control roadmap here.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (sinhala) "සම්පූර්ණයි" else "Completed", fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.weight(1f))
+                                    Text("${completed.size}/${roadmap.size}", color = NexusCyan, fontWeight = FontWeight.Bold)
+                                }
+                                LinearProgressIndicator(
+                                    progress = { completed.size.toFloat() / roadmap.size.toFloat() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = NexusCyan
+                                )
+                                roadmap.forEachIndexed { index, item ->
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                        Checkbox(
+                                            checked = index in completed,
+                                            onCheckedChange = { checked ->
+                                                if (checked && index !in completed) completed.add(index)
+                                                else completed.remove(index)
+                                            }
+                                        )
+                                        Text(item, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                    if (index != roadmap.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                                }
+                                Text(
+                                    if (sinhala) "සටහන: මෙහි සලකුණු ඔබගේ දුරකථනයේ මෙම පිටුවේ තාවකාලිකයි. GitHub හි වැඩ අවසන් බව ස්වයංක්‍රීයව තහවුරු නොකරයි." else "Note: These checkmarks are local to this page session; they do not automatically verify GitHub implementation status.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        }
+                        OutlinedButton(onClick = { tab = Tab.TOOLS }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.ArrowBack, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "මෙවලම් වෙත ආපසු" else "Back to Tools")
+                        }
+                    }
 
                     Tab.SETTINGS -> {
 
