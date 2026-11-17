@@ -677,7 +677,7 @@ internal fun NexusApp(accessToken: String) {
             connection.connectTimeout = 15000
             connection.readTimeout = 20000
             connection.doOutput = true
-            connection.setRequestProperty("Authorization", "Bearer $accessToken")
+            connection.setRequestProperty("Authorization", "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}")
             connection.setRequestProperty("Content-Type", "application/json")
             connection.outputStream.use {
                 it.write(payload.toString().toByteArray(Charsets.UTF_8))
