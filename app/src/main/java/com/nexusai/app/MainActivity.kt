@@ -2288,7 +2288,7 @@ internal fun NexusApp(accessToken: String) {
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.secondary
                                         )
-                                    }               }
+                                    }
                                 }
                                 Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
                                 val remoteFeatures = listOf(
