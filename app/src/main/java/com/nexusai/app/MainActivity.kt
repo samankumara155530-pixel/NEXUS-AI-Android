@@ -1359,18 +1359,30 @@ internal fun NexusApp(accessToken: String) {
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(54.dp),
+                                .height(54.dp)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        if (prompt.isNotBlank() && !isSending)
+                                            listOf(NexusBlue, NexusPurple, NexusCyan)
+                                        else
+                                            listOf(
+                                                NexusBlue.copy(alpha = 0.38f),
+                                                NexusPurple.copy(alpha = 0.38f)
+                                            )
+                                    ),
+                                    RoundedCornerShape(18.dp)
+                                ),
                             enabled = prompt.isNotBlank() && !isSending,
                             shape = RoundedCornerShape(18.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = NexusBlue,
+                                containerColor = Color.Transparent,
                                 contentColor = Color.White,
-                                disabledContainerColor = NexusBlue.copy(alpha = 0.38f),
+                                disabledContainerColor = Color.Transparent,
                                 disabledContentColor = Color.White.copy(alpha = 0.75f)
                             ),
                             elevation = ButtonDefaults.buttonElevation(
-                                defaultElevation = 5.dp,
-                                pressedElevation = 1.dp
+                                defaultElevation = 0.dp,
+                                pressedElevation = 0.dp
                             )
                         ) {
 
@@ -1439,8 +1451,20 @@ internal fun NexusApp(accessToken: String) {
                                     ).show()
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = noteText.isNotBlank()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            enabled = noteText.isNotBlank(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = NexusPurple,
+                                contentColor = Color.White,
+                                disabledContainerColor = NexusPurple.copy(alpha = 0.35f)
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(
+                                defaultElevation = 4.dp,
+                                pressedElevation = 1.dp
+                            )
                         ) {
 
                             Icon(Icons.Default.Save, null)
@@ -1709,7 +1733,19 @@ internal fun NexusApp(accessToken: String) {
                                         }
                                     },
                                     enabled = memoryText.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(50.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = NexusBlue,
+                                        contentColor = Color.White,
+                                        disabledContainerColor = NexusBlue.copy(alpha = 0.35f)
+                                    ),
+                                    elevation = ButtonDefaults.buttonElevation(
+                                        defaultElevation = 4.dp,
+                                        pressedElevation = 1.dp
+                                    )
                                 ) {
 
                                     Icon(Icons.Default.Add, null)
