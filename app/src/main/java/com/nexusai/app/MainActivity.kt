@@ -940,8 +940,8 @@ internal fun NexusApp(accessToken: String) {
             bottomBar = {
 
                 NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 8.dp
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                    tonalElevation = 12.dp
                 ) {
 
                     NavigationBarItem(
@@ -949,8 +949,15 @@ internal fun NexusApp(accessToken: String) {
                         onClick = { tab = Tab.CHAT },
                         icon = { Icon(Icons.Default.Chat, null) },
                         label = {
-                            Text(if (sinhala) "චැට්" else "Chat")
-                        }
+                            Text(if (sinhala) "චැට්" else "Chat", fontWeight = FontWeight.SemiBold)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NexusCyan,
+                            selectedTextColor = NexusCyan,
+                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     )
 
                     NavigationBarItem(
@@ -958,8 +965,15 @@ internal fun NexusApp(accessToken: String) {
                         onClick = { tab = Tab.NOTES },
                         icon = { Icon(Icons.Default.Notes, null) },
                         label = {
-                            Text(if (sinhala) "සටහන්" else "Notes")
-                        }
+                            Text(if (sinhala) "සටහන්" else "Notes", fontWeight = FontWeight.SemiBold)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NexusCyan,
+                            selectedTextColor = NexusCyan,
+                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     )
 
                     NavigationBarItem(
@@ -967,8 +981,15 @@ internal fun NexusApp(accessToken: String) {
                         onClick = { tab = Tab.SAVED },
                         icon = { Icon(Icons.Default.Bookmark, null) },
                         label = {
-                            Text(if (sinhala) "සුරැකි" else "Saved")
-                        }
+                            Text(if (sinhala) "සුරැකි" else "Saved", fontWeight = FontWeight.SemiBold)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NexusCyan,
+                            selectedTextColor = NexusCyan,
+                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     )
 
                     NavigationBarItem(
@@ -976,8 +997,15 @@ internal fun NexusApp(accessToken: String) {
                         onClick = { tab = Tab.MEMORY },
                         icon = { Icon(Icons.Default.Psychology, null) },
                         label = {
-                            Text(if (sinhala) "මතකය" else "Memory")
-                        }
+                            Text(if (sinhala) "මතකය" else "Memory", fontWeight = FontWeight.SemiBold)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NexusCyan,
+                            selectedTextColor = NexusCyan,
+                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     )
 
                     NavigationBarItem(
@@ -985,8 +1013,15 @@ internal fun NexusApp(accessToken: String) {
                         onClick = { tab = Tab.TOOLS },
                         icon = { Icon(Icons.Default.Build, null) },
                         label = {
-                            Text(if (sinhala) "මෙවලම්" else "Tools")
-                        }
+                            Text(if (sinhala) "මෙවලම්" else "Tools", fontWeight = FontWeight.SemiBold)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NexusCyan,
+                            selectedTextColor = NexusCyan,
+                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     )
 
                     NavigationBarItem(
@@ -994,8 +1029,15 @@ internal fun NexusApp(accessToken: String) {
                         onClick = { tab = Tab.SETTINGS },
                         icon = { Icon(Icons.Default.Settings, null) },
                         label = {
-                            Text(if (sinhala) "සැකසුම්" else "Settings")
-                        }
+                            Text(if (sinhala) "සැකසුම්" else "Settings", fontWeight = FontWeight.SemiBold)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NexusCyan,
+                            selectedTextColor = NexusCyan,
+                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     )
                 }
             }
@@ -1043,13 +1085,24 @@ internal fun NexusApp(accessToken: String) {
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(24.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
+                                containerColor = Color.Transparent
                             ),
-                            elevation = CardDefaults.cardElevation(5.dp)
+                            elevation = CardDefaults.cardElevation(8.dp)
                         ) {
 
                             Row(
-                                Modifier.padding(16.dp),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                NexusBlue.copy(alpha = if (dark) 0.30f else 0.16f),
+                                                NexusPurple.copy(alpha = if (dark) 0.24f else 0.12f),
+                                                NexusCyan.copy(alpha = if (dark) 0.12f else 0.10f)
+                                            )
+                                        )
+                                    )
+                                    .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
 
@@ -1295,7 +1348,17 @@ internal fun NexusApp(accessToken: String) {
                                 .fillMaxWidth()
                                 .height(54.dp),
                             enabled = prompt.isNotBlank() && !isSending,
-                            shape = RoundedCornerShape(18.dp)
+                            shape = RoundedCornerShape(18.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = NexusBlue,
+                                contentColor = Color.White,
+                                disabledContainerColor = NexusBlue.copy(alpha = 0.38f),
+                                disabledContentColor = Color.White.copy(alpha = 0.75f)
+                            ),
+                            elevation = ButtonDefaults.buttonElevation(
+                                defaultElevation = 5.dp,
+                                pressedElevation = 1.dp
+                            )
                         ) {
 
                             if (isSending) {
