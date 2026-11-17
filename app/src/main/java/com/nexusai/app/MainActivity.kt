@@ -2149,7 +2149,6 @@ internal fun NexusApp(accessToken: String) {
                                                     JSONObject()
                                                         .put("deviceName", android.os.Build.MODEL)
                                                         .put("deviceId", getStableDeviceId(context))
-                                                        .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
                                                 deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
@@ -2196,6 +2195,7 @@ internal fun NexusApp(accessToken: String) {
                                                     JSONObject()
                                                         .put("pairingCode", deviceClaimCode)
                                                         .put("deviceName", android.os.Build.MODEL)
+                                                        .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 deviceClaimCode = ""
                                                 deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
