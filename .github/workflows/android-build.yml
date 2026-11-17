@@ -58,7 +58,7 @@ jobs:
             exit 1
           fi
           echo "$NEXUS_KEYSTORE_BASE64" | base64 --decode > app/nexus-upload-key.jks
-          echo "NEXUS_KEYSTORE_PATH=app/nexus-upload-key.jks" >> "$GITHUB_ENV"
+          echo "NEXUS_KEYSTORE_PATH=nexus-upload-key.jks" >> "$GITHUB_ENV"
 
       - name: Build signed release APK
         env:
