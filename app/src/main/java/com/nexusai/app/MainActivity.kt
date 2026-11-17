@@ -491,6 +491,8 @@ internal fun NexusApp(accessToken: String) {
     var deviceClaimCode by remember { mutableStateOf("") }
     var deviceStatusMessage by remember { mutableStateOf("") }
     var deviceRequestBusy by remember { mutableStateOf(false) }
+    val pairedDevices = remember { mutableStateListOf<JSONObject>() }
+    var deviceListLoaded by remember { mutableStateOf(false) }
 
     var prompt by remember {
         mutableStateOf("")
@@ -684,6 +686,33 @@ internal fun NexusApp(accessToken: String) {
             connection.outputStream.use {
                 it.write(payload.toString().toByteArray(Charsets.UTF_8))
             }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = JSONObject(response.ifBlank { "{}" })
+            if (status !in 200..299) {
+                throw IllegalStateException(json.optString("error", "HTTP $status"))
+            }
+            json
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    suspend fun deviceApiGet(route: String): JSONObject = withContext(Dispatchers.IO) {
+        val connection = (
+            URL("https://nexus-ai-backend-six.vercel.app/$route")
+                .openConnection() as HttpURLConnection
+        )
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 15000
+            connection.readTimeout = 20000
+            connection.setRequestProperty(
+                "Authorization",
+                "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}"
+            )
+            connection.setRequestProperty("Accept", "application/json")
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -2134,6 +2163,116 @@ internal fun NexusApp(accessToken: String) {
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
                                 }
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(22.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Devices, null, tint = NexusCyan)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        if (sinhala) "සම්බන්ධ කළ දුරකථන" else "Paired devices",
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(
+                                        enabled = !deviceRequestBusy,
+                                        onClick = {
+                                            scope.launch {
+                                                deviceRequestBusy = true
+                                                try {
+                                                    val result = deviceApiGet("devices")
+                                                    val list = result.optJSONArray("devices") ?: JSONArray()
+                                                    pairedDevices.clear()
+                                                    for (index in 0 until list.length()) {
+                                                        pairedDevices.add(list.optJSONObject(index) ?: JSONObject())
+                                                    }
+                                                    deviceListLoaded = true
+                                                    deviceStatusMessage = if (sinhala) "දුරකථන ලැයිස්තුව යාවත්කාලීන කළා." else "Device list refreshed."
+                                                } catch (e: Exception) {
+                                                    deviceStatusMessage = (e.message ?: "Could not load devices").take(120)
+                                                } finally {
+                                                    deviceRequestBusy = false
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Refresh, null)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(if (sinhala) "Refresh" else "Refresh")
+                                    }
+                                }
+                                if (!deviceListLoaded) {
+                                    Text(
+                                        if (sinhala) "ඔබගේ සම්බන්ධ කළ දුරකථන බැලීමට Refresh ඔබන්න." else "Tap Refresh to load devices linked to your account.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                } else if (pairedDevices.isEmpty()) {
+                                    Text(
+                                        if (sinhala) "තවම සම්බන්ධ කළ දුරකථන නැහැ." else "No paired devices found.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                } else {
+                                    pairedDevices.forEach { device ->
+                                        val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(
+                                                    MaterialTheme.colorScheme.surfaceVariant,
+                                                    RoundedCornerShape(14.dp)
+                                                )
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.Smartphone, null, tint = NexusCyan)
+                                            Spacer(Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    device.optString("device_name", "NEXUS Android"),
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    device.optString("platform", "Android") +
+                                                        if (revoked) " • " + (if (sinhala) "අවලංගුයි" else "Revoked")
+                                                        else " • " + (if (sinhala) "සම්බන්ධයි" else "Paired"),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (revoked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                                                )
+                                                val lastSeen = device.optString("last_seen_at", "")
+                                                if (lastSeen.isNotBlank() && lastSeen != "null") {
+                                                    Text(
+                                                        (if (sinhala) "අවසන් වරට: " else "Last seen: ") + lastSeen,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.secondary
+                                                    )
+                                                }
+                                            }
+                                            Icon(
+                                                if (revoked) Icons.Default.Block else Icons.Default.CheckCircle,
+                                                null,
+                                                tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779)
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    if (sinhala) "මෙය සම්බන්ධ කළ උපාංග ලැයිස්තුවයි. Remote Screen පාලනය තවම සක්‍රිය කර නැත." else "This is your paired-device list. Remote screen control is not enabled yet.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
                             }
                         }
 
