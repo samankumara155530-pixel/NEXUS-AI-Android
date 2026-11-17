@@ -20,6 +20,8 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -1140,6 +1142,10 @@ internal fun NexusApp(accessToken: String) {
                     .padding(
                         horizontal = 14.dp,
                         vertical = 12.dp
+                    )
+                    .then(
+                        if (tab == Tab.CHAT) Modifier
+                        else Modifier.verticalScroll(rememberScrollState())
                     )
             ) {
 
