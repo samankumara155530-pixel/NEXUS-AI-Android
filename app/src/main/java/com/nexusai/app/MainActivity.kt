@@ -2244,25 +2244,26 @@ internal fun NexusApp(accessToken: String) {
                                         color = MaterialTheme.colorScheme.secondary
                                     )
                                 } else {
-                                    pairedDevices.forEach { device ->
+                                    val uniqueDevices = pairedDevices
+                                        .groupBy { device ->
+                                            device.optString("device_name", "NEXUS Android").trim().lowercase() +
+                                                "|" + device.optString("platform", "android").lowercase()
+                                        }
+                                        .values
+                                        .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
+                                    uniqueDevices.forEach { device ->
                                         val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .background(
-                                                    MaterialTheme.colorScheme.surfaceVariant,
-                                                    RoundedCornerShape(14.dp)
-                                                )
+                                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
                                                 .padding(12.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(Icons.Default.Smartphone, null, tint = NexusCyan)
                                             Spacer(Modifier.width(10.dp))
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    device.optString("device_name", "NEXUS Android"),
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
+                                                Text(device.optString("device_name", "NEXUS Android"), fontWeight = FontWeight.SemiBold)
                                                 Text(
                                                     device.optString("platform", "Android") +
                                                         if (revoked) " • " + (if (sinhala) "අවලංගුයි" else "Revoked")
@@ -2272,19 +2273,44 @@ internal fun NexusApp(accessToken: String) {
                                                 )
                                                 val lastSeen = device.optString("last_seen_at", "")
                                                 if (lastSeen.isNotBlank() && lastSeen != "null") {
-                                                    Text(
-                                                        (if (sinhala) "අවසන් වරට: " else "Last seen: ") + lastSeen,
+                                                    Text((if (sinhala) "අවසන් වරට: " else "Last seen: ") + lastSeen,
                                                         style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.secondary
-                                                    )
+                                                        color = MaterialTheme.colorScheme.secondary)
                                                 }
                                             }
-                                            Icon(
-                                                if (revoked) Icons.Default.Block else Icons.Default.CheckCircle,
-                                                null,
-                                                tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779)
-                                            )
+                                            Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
+                                                tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
                                         }
+                                    }
+                                    if (pairedDevices.size > uniqueDevices.size) {
+                                        Text(
+                                            if (sinhala) "එකම නම සහිත අනුපිටපත් ${pairedDevices.size - uniqueDevices.size}ක් සඟවා ඇත." else "${pairedDevices.size - uniqueDevices.size} duplicate entries with the same device name were grouped.",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }               }
+                                }
+                                Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
+                                val remoteFeatures = listOf(
+                                    Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
+                                    Triple(Icons.Default.Mic, if (sinhala) "මයික්" else "Microphone", "microphone"),
+                                    Triple(Icons.Default.PhotoLibrary, if (sinhala) "ගැලරිය" else "Gallery", "gallery"),
+                                    Triple(Icons.Default.LocationOn, if (sinhala) "ස්ථානය" else "Location", "location")
+                                )
+                                remoteFeatures.chunked(2).forEach { rowFeatures ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                        rowFeatures.forEach { feature ->
+                                            OutlinedButton(
+                                                onClick = { deviceStatusMessage = if (sinhala) "මෙම පහසුකම තවම සකස් කරමින් පවතී." else "${feature.second} remote access is not available yet." },
+                                                enabled = false,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(feature.first, null)
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(feature.second)
+                                            }
+                                        }
+                                        if (rowFeatures.size == 1) Spacer(Modifier.weight(1f))
                                     }
                                 }
                                 Text(
