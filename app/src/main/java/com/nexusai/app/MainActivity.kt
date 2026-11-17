@@ -1980,60 +1980,59 @@ internal fun NexusApp(accessToken: String) {
 
                         ToolCard(
                             title = if (sinhala)
-                                "දිනදර්ශනය"
+                                "දිනදර්ශන සිදුවීමක් එක් කරන්න"
                             else
-                                "Calendar",
+                                "Add Calendar Event",
 
                             description = if (sinhala)
-                                "දුරකථනයේ Calendar යෙදුම විවෘත කරන්න."
+                                "දුරකථනයේ Calendar එකට නව සිදුවීමක් එක් කරන්න."
                             else
-                                "Open your phone's Calendar.",
+                                "Create an event in your phone's Calendar.",
 
                             icon = Icons.Default.CalendarMonth
                         ) {
 
                             try {
-                                // Open the calendar view first; do not create a
-                                // pre-filled event when the user only asks to open Calendar.
-                                // Launch the installed Calendar app using Android's
-                                // standard app category. Fall back to the provider URI
-                                // for calendar apps that expose ACTION_VIEW only.
-                                val calendarIntent = Intent(
-                                    Intent.ACTION_MAIN
-                                ).addCategory(Intent.CATEGORY_APP_CALENDAR)
+                                val start = System.currentTimeMillis() + 60 * 60 * 1000
+                                val end = start + 60 * 60 * 1000
 
-                                val fallbackIntent = Intent(
-                                    Intent.ACTION_VIEW,
-                                    CalendarContract.CONTENT_URI
-                                )
-
-                                when {
-                                    calendarIntent.resolveActivity(context.packageManager) != null ->
-                                        context.startActivity(calendarIntent)
-                                    fallbackIntent.resolveActivity(context.packageManager) != null ->
-                                        context.startActivity(fallbackIntent)
-                                    else -> Toast.makeText(
-                                        context,
-                                        if (sinhala)
-                                            "Calendar යෙදුමක් හමු වුණේ නැහැ. Calendar යෙදුමක් ස්ථාපනය කර නැවත උත්සාහ කරන්න."
-                                        else
-                                            "No Calendar app was found. Install a calendar app and try again.",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                val calendarIntent = Intent(Intent.ACTION_INSERT).apply {
+                                    setDataAndType(
+                                        CalendarContract.Events.CONTENT_URI,
+                                        CalendarContract.Events.CONTENT_ITEM_TYPE
+                                    )
+                                    putExtra(CalendarContract.Events.TITLE, "NEXUS AI Event")
+                                    putExtra(
+                                        CalendarContract.Events.DESCRIPTION,
+                                        "Added using NEXUS AI."
+                                    )
+                                    putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
+                                    putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end)
                                 }
+
+                                Toast.makeText(
+                                    context,
+                                    if (sinhala) "Calendar Event පෝරමය විවෘත කරමින්..." else "Opening Calendar event form...",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+
+                                // Launch directly; package visibility can hide resolveActivity results.
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        calendarIntent,
+                                        if (sinhala) "Calendar යෙදුම තෝරන්න" else "Choose Calendar app"
+                                    )
+                                )
                             } catch (e: ActivityNotFoundException) {
                                 Toast.makeText(
                                     context,
-                                    if (sinhala) "Calendar විවෘත කළ නොහැක." else "Unable to open Calendar.",
+                                    if (sinhala) "Calendar යෙදුමක් හමු වුණේ නැහැ." else "No compatible Calendar app found.",
                                     Toast.LENGTH_LONG
                                 ).show()
                             } catch (e: Exception) {
                                 Toast.makeText(
                                     context,
-                                    if (sinhala)
-                                        "Calendar දෝෂය: ${e.localizedMessage ?: "නොදන්නා දෝෂයක්"}"
-                                    else
-                                        "Calendar error: ${e.localizedMessage ?: "Unknown error"}",
+                                    if (sinhala) "Calendar දෝෂයක් ඇති වුණා. නැවත උත්සාහ කරන්න." else "Calendar error. Please try again.",
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
