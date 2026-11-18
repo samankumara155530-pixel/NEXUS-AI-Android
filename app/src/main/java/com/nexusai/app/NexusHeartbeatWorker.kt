@@ -1,6 +1,7 @@
 package com.nexusai.app
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -50,7 +51,15 @@ class NexusHeartbeatWorker(
         }
 
         // FCM registration is best-effort; heartbeat must still work without Firebase config.
-        try { NexusPushManager.registerCurrentToken(applicationContext) } catch (_: Exception) { }
+        try {
+            NexusPushManager.registerCurrentToken(applicationContext)
+        } catch (error: Exception) {
+            Log.w(
+                "NexusHeartbeatWorker",
+                "FCM token registration failed; heartbeat will continue",
+                error
+            )
+        }
 
         var connection: HttpURLConnection? = null
         try {
