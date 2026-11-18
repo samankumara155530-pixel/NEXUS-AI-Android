@@ -49,6 +49,9 @@ class NexusHeartbeatWorker(
             return@withContext Result.retry()
         }
 
+        // FCM registration is best-effort; heartbeat must still work without Firebase config.
+        try { NexusPushManager.registerCurrentToken(applicationContext) } catch (_: Exception) { }
+
         var connection: HttpURLConnection? = null
         try {
             connection = (URL("$BACKEND_BASE_URL/devices/heartbeat")
