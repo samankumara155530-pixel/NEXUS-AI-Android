@@ -1,6 +1,7 @@
 package com.nexusai.app
 
 import android.content.Context
+import android.util.Log
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
@@ -11,6 +12,7 @@ import java.net.URL
 
 /** Registers an FCM token against this already-paired installation. */
 internal object NexusPushManager {
+    private const val TAG = "NexusPushManager"
     private const val BACKEND_BASE_URL = "https://nexus-ai-backend-six.vercel.app"
     private const val PREFS = "nexus_local_data"
     private const val REGISTERED_TOKEN_KEY = "nexus_registered_fcm_token"
@@ -22,7 +24,10 @@ internal object NexusPushManager {
     }
 
     suspend fun registerToken(context: Context, token: String) = withContext(Dispatchers.IO) {
-        if (token.isBlank()) return@withContext
+        if (token.isBlank()) {
+            Log.w(TAG, "FCM returned an empty registration token")
+            return@withContext
+        }
 
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val lastRegisteredToken = prefs.getString(REGISTERED_TOKEN_KEY, null)
@@ -32,9 +37,15 @@ internal object NexusPushManager {
         }
 
         val deviceId = prefs.getString("stable_device_id", null)
-            ?.takeIf { it.isNotBlank() } ?: return@withContext
+            ?.takeIf { it.isNotBlank() } ?: run {
+                Log.w(TAG, "FCM registration skipped: stable device ID is missing")
+                return@withContext
+            }
         val accessToken = NexusAuthManager.refreshAccessToken(context, "")
-        if (accessToken.isBlank()) return@withContext
+        if (accessToken.isBlank()) {
+            Log.w(TAG, "FCM registration skipped: no valid authenticated session")
+            return@withContext
+        }
 
         var connection: HttpURLConnection? = null
         try {
@@ -53,9 +64,23 @@ internal object NexusPushManager {
             connection.outputStream.use {
                 it.write(payload.toString().toByteArray(Charsets.UTF_8))
             }
-            if (connection.responseCode !in 200..299) {
-                throw IllegalStateException("FCM token registration failed: HTTP ${connection.responseCode}")
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                val responseBody = connection.errorStream
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    .orEmpty()
+                val backendError = try {
+                    JSONObject(responseBody).optString("error").takeIf { it.isNotBlank() }
+                } catch (_: Exception) {
+                    null
+                }
+                throw IllegalStateException(
+                    "FCM token registration failed: HTTP $responseCode" +
+                        (backendError?.let { " ($it)" } ?: "")
+                )
             }
+            Log.i(TAG, "FCM token registered successfully")
             prefs.edit()
                 .putString(REGISTERED_TOKEN_KEY, token)
                 .putLong(REGISTERED_AT_KEY, System.currentTimeMillis())
