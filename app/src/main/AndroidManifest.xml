@@ -6,6 +6,9 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- NETWORK STATE FOR WORKMANAGER RECONNECTION -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- INTERNET -->
     <uses-permission
         android:name="android.permission.INTERNET" />

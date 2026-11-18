@@ -743,6 +743,28 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    // Restore heartbeat scheduling for installations that were paired
+    // before this WorkManager feature was introduced.
+    LaunchedEffect(accessToken) {
+        try {
+            val result = deviceApiGet("devices")
+            val list = result.optJSONArray("devices") ?: JSONArray()
+            val localDeviceId = getStableDeviceId(context)
+            val isAlreadyPaired = (0 until list.length()).any { index ->
+                val device = list.optJSONObject(index) ?: JSONObject()
+                val remoteId = device.optString("device_id").ifBlank {
+                    device.optString("deviceId")
+                }
+                remoteId.equals(localDeviceId, ignoreCase = true)
+            }
+            if (isAlreadyPaired) {
+                NexusHeartbeatWorker.enable(context)
+            }
+        } catch (_: Exception) {
+            // A temporary network/auth failure must not block app startup.
+        }
+    }
+
     LaunchedEffect(tab) {
         if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
             deviceRequestBusy = true
@@ -2151,6 +2173,7 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
+                                                NexusHeartbeatWorker.enable(context)
                                                 deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
@@ -2198,6 +2221,7 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 deviceClaimCode = ""
+                                                NexusHeartbeatWorker.enable(context)
                                                 deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
@@ -2515,6 +2539,7 @@ internal fun NexusApp(accessToken: String) {
                         val completed = remember {
                             mutableStateListOf<Int>().apply {
                                 addAll(roadmapPrefs.getStringSet("completed_items", emptySet())
+                                    .orEmpty()
                                     .mapNotNull { it.toIntOrNull() }
                                     .filter { it in roadmap.indices })
                             }
