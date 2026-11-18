@@ -88,5 +88,14 @@ dependencies {
     // Persistent, network-constrained background heartbeat
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
+    // Firebase Cloud Messaging for paired-device presence wake messages
+    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+    implementation("com.google.firebase:firebase-messaging")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// Apply Google Services only when the private Firebase config is present.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
