@@ -13,6 +13,8 @@ import java.net.URL
 internal object NexusPushManager {
     private const val BACKEND_BASE_URL = "https://nexus-ai-backend-six.vercel.app"
     private const val PREFS = "nexus_local_data"
+    private const val REGISTERED_TOKEN_KEY = "nexus_registered_fcm_token"
+    private const val REGISTERED_AT_KEY = "nexus_fcm_registered_at"
 
     suspend fun registerCurrentToken(context: Context) = withContext(Dispatchers.IO) {
         val token = Tasks.await(FirebaseMessaging.getInstance().token)
@@ -23,6 +25,12 @@ internal object NexusPushManager {
         if (token.isBlank()) return@withContext
 
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val lastRegisteredToken = prefs.getString(REGISTERED_TOKEN_KEY, null)
+        val lastRegisteredAt = prefs.getLong(REGISTERED_AT_KEY, 0L)
+        if (lastRegisteredToken == token && System.currentTimeMillis() - lastRegisteredAt < 24L * 60L * 60L * 1000L) {
+            return@withContext
+        }
+
         val deviceId = prefs.getString("stable_device_id", null)
             ?.takeIf { it.isNotBlank() } ?: return@withContext
         val accessToken = NexusAuthManager.refreshAccessToken(context, "")
@@ -48,6 +56,10 @@ internal object NexusPushManager {
             if (connection.responseCode !in 200..299) {
                 throw IllegalStateException("FCM token registration failed: HTTP ${connection.responseCode}")
             }
+            prefs.edit()
+                .putString(REGISTERED_TOKEN_KEY, token)
+                .putLong(REGISTERED_AT_KEY, System.currentTimeMillis())
+                .apply()
         } finally {
             connection?.disconnect()
         }
