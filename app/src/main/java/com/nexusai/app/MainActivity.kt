@@ -277,6 +277,7 @@ private enum class Tab {
     NOTES,
     SAVED,
     MEMORY,
+    PAIR,
     TOOLS,
     PROGRESS,
     SETTINGS
@@ -509,14 +510,11 @@ internal fun NexusApp(accessToken: String) {
     var deviceStatusMessage by remember { mutableStateOf("") }
     var deviceRequestBusy by remember { mutableStateOf(false) }
     var deviceRole by remember {
-        mutableStateOf(
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString("nexus_device_role", "unassigned") ?: "unassigned"
-        )
+        mutableStateOf(BuildConfig.NEXUS_DEVICE_ROLE)
     }
 
     fun saveDeviceRole(role: String) {
-        if (role !in setOf("controller", "target")) return
+        if (role != BuildConfig.NEXUS_DEVICE_ROLE) return
         deviceRole = role
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -785,8 +783,14 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    LaunchedEffect(deviceRole, tab) {
+        if (deviceRole == "target" && tab == Tab.TOOLS) {
+            tab = Tab.PAIR
+        }
+    }
+
     LaunchedEffect(tab) {
-        if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
+        if (tab == Tab.TOOLS && deviceRole == "controller" && !deviceListLoaded && !deviceRequestBusy) {
             deviceRequestBusy = true
             try {
                 val result = deviceApiGet("devices")
@@ -1185,13 +1189,29 @@ internal fun NexusApp(accessToken: String) {
                         )
                     )
 
-                    if (deviceRole != "target") {
+                    if (deviceRole == "controller") {
                         NavigationBarItem(
                             selected = tab == Tab.TOOLS,
                             onClick = { tab = Tab.TOOLS },
                             icon = { Icon(Icons.Default.Build, null) },
                             label = {
                                 Text(if (sinhala) "මෙවලම්" else "Tools", fontWeight = FontWeight.SemiBold)
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = NexusCyan,
+                                selectedTextColor = NexusCyan,
+                                indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                    } else {
+                        NavigationBarItem(
+                            selected = tab == Tab.PAIR,
+                            onClick = { tab = Tab.PAIR },
+                            icon = { Icon(Icons.Default.Link, null) },
+                            label = {
+                                Text(if (sinhala) "සම්බන්ධ" else "Connect", fontWeight = FontWeight.SemiBold)
                             },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = NexusCyan,
@@ -2223,42 +2243,6 @@ internal fun NexusApp(accessToken: String) {
                                         Text(if (sinhala) "කේතය Copy කරන්න" else "Copy code")
                                     }
                                 }
-                                OutlinedTextField(
-                                    value = deviceClaimCode,
-                                    onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    label = { Text(if (sinhala) "අනෙක් දුරකථනයේ Pairing කේතය" else "Pairing code from other phone") }
-                                )
-                                OutlinedButton(
-                                    enabled = !deviceRequestBusy && deviceClaimCode.length == 8,
-                                    onClick = {
-                                        scope.launch {
-                                            deviceRequestBusy = true
-                                            try {
-                                                deviceApiPost(
-                                                    "devices/pair/claim",
-                                                    JSONObject()
-                                                        .put("pairingCode", deviceClaimCode)
-                                                        .put("deviceName", android.os.Build.MODEL)
-                                                        .put("deviceId", getStableDeviceId(context))
-                                                )
-                                                deviceClaimCode = ""
-                                                saveDeviceRole("target")
-                                                NexusHeartbeatWorker.enable(context)
-                                                deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
-                                            } catch (e: Exception) {
-                                                deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
-                                            } finally {
-                                                deviceRequestBusy = false
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Text(if (sinhala) "මෙම දුරකථනය Pair කරන්න" else "Pair this phone")
-                                }
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
                                 }
@@ -2342,6 +2326,23 @@ internal fun NexusApp(accessToken: String) {
                                         .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
                                     uniqueDevices.forEach { device ->
                                         val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
+                                        val targetDeviceId = listOf("device_id", "deviceId")
+                                            .asSequence()
+                                            .mapNotNull { key ->
+                                                if (device.isNull(key)) null
+                                                else device.optString(key).trim()
+                                            }
+                                            .firstOrNull { candidate ->
+                                                runCatching {
+                                                    java.util.UUID.fromString(candidate).toString()
+                                                        .equals(candidate, ignoreCase = true)
+                                                }.getOrDefault(false)
+                                            }
+                                            .orEmpty()
+                                        val isThisPhone = targetDeviceId.equals(
+                                            getStableDeviceId(context),
+                                            ignoreCase = true
+                                        )
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -2367,8 +2368,60 @@ internal fun NexusApp(accessToken: String) {
                                                         color = MaterialTheme.colorScheme.secondary)
                                                 }
                                             }
-                                            Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
-                                                tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    if (revoked) Icons.Default.Block else Icons.Default.CheckCircle,
+                                                    null,
+                                                    tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779)
+                                                )
+                                                if (!revoked && !isThisPhone && targetDeviceId.isNotBlank()) {
+                                                    TextButton(
+                                                        enabled = !deviceRequestBusy,
+                                                        onClick = {
+                                                            scope.launch {
+                                                                deviceRequestBusy = true
+                                                                try {
+                                                                    deviceApiPost(
+                                                                        "devices/$targetDeviceId/push/wake",
+                                                                        JSONObject()
+                                                                    )
+                                                                    deviceStatusMessage = if (sinhala)
+                                                                        "Wake පණිවිඩය FCM වෙත සාර්ථකව යැව්වා."
+                                                                    else
+                                                                        "Wake request accepted by FCM."
+                                                                } catch (e: Exception) {
+                                                                    val error = e.message.orEmpty()
+                                                                    deviceStatusMessage = when {
+                                                                        error.contains("PUSH_TOKEN_NOT_REGISTERED") ->
+                                                                            if (sinhala) "මෙම දුරකථනයේ FCM Token එක තවම ලියාපදිංචි වී නැහැ. එහි App එක විවෘත කර අන්තර්ජාලයට සම්බන්ධ කරන්න." else "This phone has not registered its FCM token yet. Open its app while online."
+                                                                        error.contains("PUSH_WAKE_RATE_LIMITED") ->
+                                                                            if (sinhala) "නැවත උත්සාහ කිරීමට තත්පර 30ක් රැඳී සිටින්න." else "Please wait 30 seconds before trying again."
+                                                                        error.contains("FCM_NOT_CONFIGURED") ->
+                                                                            if (sinhala) "Backend FCM සැකසුම සම්පූර්ණ නැහැ." else "Backend FCM is not configured."
+                                                                        else -> (if (sinhala) "Wake අසාර්ථකයි: " else "Wake failed: ") + error.take(100)
+                                                                    }
+                                                                } finally {
+                                                                    deviceRequestBusy = false
+                                                                }
+                                                            }
+                                                        }
+                                                    ) {
+                                                        Text(if (sinhala) "Wake" else "Wake")
+                                                    }
+                                                } else if (isThisPhone && !revoked) {
+                                                    Text(
+                                                        if (sinhala) "මෙම දුරකථනය" else "This phone",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.secondary
+                                                    )
+                                                } else if (!revoked && targetDeviceId.isBlank()) {
+                                                    Text(
+                                                        if (sinhala) "නැවත Pair කරන්න" else "Re-pair needed",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                     if (pairedDevices.size > uniqueDevices.size) {
@@ -2636,6 +2689,78 @@ internal fun NexusApp(accessToken: String) {
                             Icon(Icons.Default.ArrowBack, null)
                             Spacer(Modifier.width(8.dp))
                             Text(if (sinhala) "මෙවලම් වෙත ආපසු" else "Back to Tools")
+                        }
+                    }
+
+                    Tab.PAIR -> {
+                        ScreenTitle(if (sinhala) "Controller වෙත සම්බන්ධ වන්න" else "Connect to Controller")
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(22.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(Icons.Default.Link, null, tint = NexusCyan, modifier = Modifier.size(32.dp))
+                                Text(
+                                    if (sinhala)
+                                        "පාලනය කරන දුරකථනයෙන් ලබාගත් ඉලක්කම් 8ක Pairing කේතය මෙහි ඇතුළත් කරන්න."
+                                    else
+                                        "Enter the 8-digit pairing code generated on your Controller phone.",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                OutlinedTextField(
+                                    value = deviceClaimCode,
+                                    onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    label = { Text(if (sinhala) "Pairing කේතය" else "Pairing code") }
+                                )
+                                Button(
+                                    enabled = !deviceRequestBusy && deviceClaimCode.length == 8,
+                                    onClick = {
+                                        scope.launch {
+                                            deviceRequestBusy = true
+                                            try {
+                                                deviceApiPost(
+                                                    "devices/pair/claim",
+                                                    JSONObject()
+                                                        .put("pairingCode", deviceClaimCode)
+                                                        .put("deviceName", android.os.Build.MODEL)
+                                                        .put("deviceId", getStableDeviceId(context))
+                                                )
+                                                deviceClaimCode = ""
+                                                saveDeviceRole("target")
+                                                NexusHeartbeatWorker.enable(context)
+                                                deviceStatusMessage = if (sinhala)
+                                                    "දුරකථනය සාර්ථකව Pair කළා."
+                                                else
+                                                    "Phone paired successfully."
+                                            } catch (e: Exception) {
+                                                deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
+                                            } finally {
+                                                deviceRequestBusy = false
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    if (deviceRequestBusy) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    Text(if (sinhala) "මෙම දුරකථනය සම්බන්ධ කරන්න" else "Connect this phone")
+                                }
+                                if (deviceStatusMessage.isNotBlank()) {
+                                    Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
+                                }
+                            }
                         }
                     }
 
