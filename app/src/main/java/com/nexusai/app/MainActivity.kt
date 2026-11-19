@@ -2318,10 +2318,23 @@ internal fun NexusApp(accessToken: String) {
                                         .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
                                     uniqueDevices.forEach { device ->
                                         val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
-                                        val targetDeviceId = device.optString("device_id").ifBlank {
-                                            device.optString("deviceId")
-                                        }
-                                        val isThisPhone = targetDeviceId.equals(getStableDeviceId(context), ignoreCase = true)
+                                        val targetDeviceId = listOf("device_id", "deviceId")
+                                            .asSequence()
+                                            .mapNotNull { key ->
+                                                if (device.isNull(key)) null
+                                                else device.optString(key).trim()
+                                            }
+                                            .firstOrNull { candidate ->
+                                                runCatching {
+                                                    java.util.UUID.fromString(candidate).toString()
+                                                        .equals(candidate, ignoreCase = true)
+                                                }.getOrDefault(false)
+                                            }
+                                            .orEmpty()
+                                        val isThisPhone = targetDeviceId.equals(
+                                            getStableDeviceId(context),
+                                            ignoreCase = true
+                                        )
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -2392,6 +2405,12 @@ internal fun NexusApp(accessToken: String) {
                                                         if (sinhala) "මෙම දුරකථනය" else "This phone",
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.secondary
+                                                    )
+                                                } else if (!revoked && targetDeviceId.isBlank()) {
+                                                    Text(
+                                                        if (sinhala) "නැවත Pair කරන්න" else "Re-pair needed",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.error
                                                     )
                                                 }
                                             }
