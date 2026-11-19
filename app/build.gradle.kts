@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Increase versionCode for every installable update.
-        versionCode = 13
-        versionName = "1.4.7"
+        versionCode = 14
+        versionName = "1.5.0"
     }
 
     signingConfigs {
@@ -49,8 +49,24 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    flavorDimensions += "deviceRole"
+
+    productFlavors {
+        create("controller") {
+            dimension = "deviceRole"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"controller\"")
+            resValue("string", "app_name", "NEXUS AI Controller")
+        }
+        create("target") {
+            dimension = "deviceRole"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"target\"")
+            resValue("string", "app_name", "NEXUS AI Target")
+        }
+    }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
