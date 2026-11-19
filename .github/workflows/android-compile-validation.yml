@@ -8,6 +8,7 @@ on:
     branches:
       - feature/fcm-push-notifications
       - feature/device-role-separation
+      - release/nexus-1.5.0-role-apks
   workflow_dispatch:
 
 permissions:
@@ -38,5 +39,5 @@ jobs:
           gradle-version: "8.9"
 
       # Compile only: this does not assemble or publish an APK.
-      - name: Compile debug Kotlin
-        run: gradle :app:compileDebugKotlin --stacktrace
+      - name: Compile Controller and Target debug Kotlin
+        run: gradle :app:compileControllerDebugKotlin :app:compileTargetDebugKotlin --stacktrace
