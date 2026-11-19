@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/device-role-separation
   push:
     branches:
       - feature/fcm-push-notifications
