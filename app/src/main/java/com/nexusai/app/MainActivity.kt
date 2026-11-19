@@ -508,6 +508,21 @@ internal fun NexusApp(accessToken: String) {
     var deviceClaimCode by remember { mutableStateOf("") }
     var deviceStatusMessage by remember { mutableStateOf("") }
     var deviceRequestBusy by remember { mutableStateOf(false) }
+    var deviceRole by remember {
+        mutableStateOf(
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString("nexus_device_role", "unassigned") ?: "unassigned"
+        )
+    }
+
+    fun saveDeviceRole(role: String) {
+        if (role !in setOf("controller", "target")) return
+        deviceRole = role
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("nexus_device_role", role)
+            .apply()
+    }
     val pairedDevices = remember { mutableStateListOf<JSONObject>() }
     var deviceListLoaded by remember { mutableStateOf(false) }
 
@@ -750,14 +765,19 @@ internal fun NexusApp(accessToken: String) {
             val result = deviceApiGet("devices")
             val list = result.optJSONArray("devices") ?: JSONArray()
             val localDeviceId = getStableDeviceId(context)
-            val isAlreadyPaired = (0 until list.length()).any { index ->
-                val device = list.optJSONObject(index) ?: JSONObject()
-                val remoteId = device.optString("device_id").ifBlank {
-                    device.optString("deviceId")
+            val localDevice = (0 until list.length())
+                .mapNotNull { index -> list.optJSONObject(index) }
+                .firstOrNull { device ->
+                    val remoteId = device.optString("device_id").ifBlank {
+                        device.optString("deviceId")
+                    }
+                    remoteId.equals(localDeviceId, ignoreCase = true)
                 }
-                remoteId.equals(localDeviceId, ignoreCase = true)
+            val serverRole = localDevice?.optString("device_role").orEmpty()
+            if (serverRole == "controller" || serverRole == "target") {
+                saveDeviceRole(serverRole)
             }
-            if (isAlreadyPaired) {
+            if (localDevice != null) {
                 NexusHeartbeatWorker.enable(context)
             }
         } catch (_: Exception) {
@@ -1165,21 +1185,23 @@ internal fun NexusApp(accessToken: String) {
                         )
                     )
 
-                    NavigationBarItem(
-                        selected = tab == Tab.TOOLS,
-                        onClick = { tab = Tab.TOOLS },
-                        icon = { Icon(Icons.Default.Build, null) },
-                        label = {
-                            Text(if (sinhala) "මෙවලම්" else "Tools", fontWeight = FontWeight.SemiBold)
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = NexusCyan,
-                            selectedTextColor = NexusCyan,
-                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    if (deviceRole != "target") {
+                        NavigationBarItem(
+                            selected = tab == Tab.TOOLS,
+                            onClick = { tab = Tab.TOOLS },
+                            icon = { Icon(Icons.Default.Build, null) },
+                            label = {
+                                Text(if (sinhala) "මෙවලම්" else "Tools", fontWeight = FontWeight.SemiBold)
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = NexusCyan,
+                                selectedTextColor = NexusCyan,
+                                indicatorColor = NexusBlue.copy(alpha = 0.22f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
-                    )
+                    }
 
                     NavigationBarItem(
                         selected = tab == Tab.SETTINGS,
@@ -2173,6 +2195,7 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
+                                                saveDeviceRole("controller")
                                                 NexusHeartbeatWorker.enable(context)
                                                 deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
                                             } catch (e: Exception) {
@@ -2221,6 +2244,7 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 deviceClaimCode = ""
+                                                saveDeviceRole("target")
                                                 NexusHeartbeatWorker.enable(context)
                                                 deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
                                             } catch (e: Exception) {
