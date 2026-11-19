@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - feature/fcm-push-notifications
+      - fix/fcm-invalid-device-id-guard
   workflow_dispatch:
 
 permissions:
