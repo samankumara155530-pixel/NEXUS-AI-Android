@@ -2318,6 +2318,10 @@ internal fun NexusApp(accessToken: String) {
                                         .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
                                     uniqueDevices.forEach { device ->
                                         val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
+                                        val targetDeviceId = device.optString("device_id").ifBlank {
+                                            device.optString("deviceId")
+                                        }
+                                        val isThisPhone = targetDeviceId.equals(getStableDeviceId(context), ignoreCase = true)
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -2343,8 +2347,54 @@ internal fun NexusApp(accessToken: String) {
                                                         color = MaterialTheme.colorScheme.secondary)
                                                 }
                                             }
-                                            Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
-                                                tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    if (revoked) Icons.Default.Block else Icons.Default.CheckCircle,
+                                                    null,
+                                                    tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779)
+                                                )
+                                                if (!revoked && !isThisPhone && targetDeviceId.isNotBlank()) {
+                                                    TextButton(
+                                                        enabled = !deviceRequestBusy,
+                                                        onClick = {
+                                                            scope.launch {
+                                                                deviceRequestBusy = true
+                                                                try {
+                                                                    deviceApiPost(
+                                                                        "devices/$targetDeviceId/push/wake",
+                                                                        JSONObject()
+                                                                    )
+                                                                    deviceStatusMessage = if (sinhala)
+                                                                        "Wake පණිවිඩය FCM වෙත සාර්ථකව යැව්වා."
+                                                                    else
+                                                                        "Wake request accepted by FCM."
+                                                                } catch (e: Exception) {
+                                                                    val error = e.message.orEmpty()
+                                                                    deviceStatusMessage = when {
+                                                                        error.contains("PUSH_TOKEN_NOT_REGISTERED") ->
+                                                                            if (sinhala) "මෙම දුරකථනයේ FCM Token එක තවම ලියාපදිංචි වී නැහැ. එහි App එක විවෘත කර අන්තර්ජාලයට සම්බන්ධ කරන්න." else "This phone has not registered its FCM token yet. Open its app while online."
+                                                                        error.contains("PUSH_WAKE_RATE_LIMITED") ->
+                                                                            if (sinhala) "නැවත උත්සාහ කිරීමට තත්පර 30ක් රැඳී සිටින්න." else "Please wait 30 seconds before trying again."
+                                                                        error.contains("FCM_NOT_CONFIGURED") ->
+                                                                            if (sinhala) "Backend FCM සැකසුම සම්පූර්ණ නැහැ." else "Backend FCM is not configured."
+                                                                        else -> (if (sinhala) "Wake අසාර්ථකයි: " else "Wake failed: ") + error.take(100)
+                                                                    }
+                                                                } finally {
+                                                                    deviceRequestBusy = false
+                                                                }
+                                                            }
+                                                        }
+                                                    ) {
+                                                        Text(if (sinhala) "Wake" else "Wake")
+                                                    }
+                                                } else if (isThisPhone && !revoked) {
+                                                    Text(
+                                                        if (sinhala) "මෙම දුරකථනය" else "This phone",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.secondary
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                     if (pairedDevices.size > uniqueDevices.size) {
