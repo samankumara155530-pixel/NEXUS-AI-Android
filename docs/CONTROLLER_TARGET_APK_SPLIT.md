@@ -15,7 +15,7 @@ The Controller variant retains the full NEXUS AI workspace. The Target variant i
 - Both variants use the existing release signing configuration and keystore.
 - They are intended for two different physical phones. Installing one variant over the other on the same phone replaces that installation because the package ID is shared.
 - Do not change the application ID, signing key, or keystore for this split; doing so would break normal in-place updates.
-- Release version remains 1.4.7 / versionCode 13 during this implementation. The 1.5.0 version bump is reserved for the final release build after acceptance tests.
+- Release version: 1.5.0 / versionCode 14. Both role variants use the same versionCode and retain the existing application ID and release signing key.
 
 ## Role assignment and authorization
 
@@ -55,7 +55,7 @@ The workflow validates the Firebase JSON package name against `com.nexusai.app`,
 
 ## Acceptance checklist
 
-1. Both release variants compile and are signed with the existing release keystore.
+1. Both release variants compile and are signed with the existing release keystore; CI verifies each APK signature, package ID, versionCode, versionName, and role-specific launcher label.
 2. Controller APK shows Generate Pairing Code and Paired Devices; it does not show Claim Pairing Code.
 3. Target APK shows Claim Pairing Code; it does not show Generate Pairing Code or the controller dashboard.
 4. Pairing from the controller assigns `controller`; claiming on the target assigns `target`.
