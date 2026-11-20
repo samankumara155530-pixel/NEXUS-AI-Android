@@ -39,7 +39,7 @@ jobs:
       - name: Install XML validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxml2-utils
+          sudo apt-get install -y libxml2-utils jq
 
       - name: Validate Android Manifest
         run: |
