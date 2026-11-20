@@ -45,6 +45,8 @@ The backend remains authoritative:
 
 ## Build workflow
 
+- GitHub Actions run #131 completed successfully for both Controller and Target APKs. CI verified signatures, package identity, versionCode 14, versionName, and role-specific launcher labels, then uploaded both APK artifacts.
+
 GitHub Actions builds the two signed release variants as separate matrix jobs:
 
 - Gradle task: `assembleControllerRelease`
