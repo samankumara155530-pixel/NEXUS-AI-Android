@@ -37,7 +37,10 @@ The backend remains authoritative:
 - Firebase Android configuration is injected by GitHub Actions from the `FIREBASE_GOOGLE_SERVICES_JSON_BASE64` secret and is not committed to the repository.
 - Both variants use Firebase Cloud Messaging and register their installation token after successful pairing.
 - The target requests Android notification permission after pairing when required by Android 13+.
+- The Controller dashboard offers a `Wake target` action for active target devices.
+- The wake API checks that the supplied installation belongs to the account and has the `controller` role, and that the destination has the `target` role.
 - A `NEXUS_WAKE / SYNC_PRESENCE` data message triggers an authenticated `POST /devices/heartbeat` request. If notifications are permitted, the target displays a visible wake notification.
+- The caller-supplied controller installation ID is a role check, not a cryptographic device credential; stronger device-bound credentials remain a future security enhancement.
 - This confirms push delivery and presence sync only. It does **not** implement remote screen capture, remote touch input, camera streaming, or microphone streaming.
 
 ## Build workflow
@@ -58,5 +61,6 @@ The workflow validates the Firebase JSON package name against `com.nexusai.app`,
 4. Pairing from the controller assigns `controller`; claiming on the target assigns `target`.
 5. Backend rejects a target attempting to start pairing and rejects a controller attempting to claim as target.
 6. Both paired installations register FCM tokens against their own stable installation IDs.
-7. A controller wake request is delivered to the target, updates target `last_seen_at` through heartbeat, and displays a notification when notification permission is granted.
-8. No claim is made that remote screen or touch control is implemented until those features have their own consent and Android permission implementation and tests.
+7. Only the Controller APK exposes the Wake Target action; the backend checks controller and target roles.
+8. A controller wake request is delivered to the target, updates target `last_seen_at` through heartbeat, and displays a notification when notification permission is granted.
+9. No claim is made that remote screen or touch control is implemented until those features have their own consent and Android permission implementation and tests.
