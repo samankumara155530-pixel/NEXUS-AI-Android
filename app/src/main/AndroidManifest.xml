@@ -85,6 +85,15 @@
 
         </activity>
 
+        <!-- Firebase Cloud Messaging device wake receiver -->
+        <service
+            android:name=".NexusFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- NEXUS VOICE SERVICE -->
         <service
             android:name=".NexusVoiceService"
