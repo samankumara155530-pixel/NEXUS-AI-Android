@@ -2768,6 +2768,7 @@ internal fun NexusApp(accessToken: String) {
 
                                 Spacer(Modifier.height(16.dp))
 
+                                if (BuildConfig.NEXUS_DEVICE_ROLE == "controller") {
                                 // NEXUS VOICE ENGINE
 
                                 Row(
@@ -2852,6 +2853,9 @@ internal fun NexusApp(accessToken: String) {
                                 HorizontalDivider()
 
                                 Spacer(Modifier.height(16.dp))
+
+
+                                }
 
                                 // DATA SECURITY
 
