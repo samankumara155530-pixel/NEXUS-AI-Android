@@ -332,7 +332,9 @@ internal fun NexusApp(accessToken: String) {
     }
 
     var tab by remember {
-        mutableStateOf(Tab.CHAT)
+        mutableStateOf(
+            if (BuildConfig.NEXUS_DEVICE_ROLE == "controller") Tab.CHAT else Tab.TOOLS
+        )
     }
 
     var voiceEngineEnabled by remember {
@@ -1086,6 +1088,7 @@ internal fun NexusApp(accessToken: String) {
                     tonalElevation = 12.dp
                 ) {
 
+                    if (BuildConfig.NEXUS_DEVICE_ROLE == "controller") {
                     NavigationBarItem(
                         selected = tab == Tab.CHAT,
                         onClick = { tab = Tab.CHAT },
@@ -1149,6 +1152,8 @@ internal fun NexusApp(accessToken: String) {
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     )
+
+                    }
 
                     NavigationBarItem(
                         selected = tab == Tab.TOOLS,
@@ -2110,6 +2115,7 @@ internal fun NexusApp(accessToken: String) {
                                 "NEXUS Tools"
                         )
 
+                        if (BuildConfig.NEXUS_DEVICE_ROLE == "controller") {
                         OutlinedButton(
                             onClick = { tab = Tab.PROGRESS },
                             modifier = Modifier.fillMaxWidth(),
@@ -2120,6 +2126,8 @@ internal fun NexusApp(accessToken: String) {
                             Text(if (sinhala) "ව්‍යාපෘති ප්‍රගතිය සහ වැඩ සැලැස්ම" else "Project Progress & Roadmap")
                             Spacer(Modifier.weight(1f))
                             Icon(Icons.Default.ChevronRight, null)
+                        }
+
                         }
 
                         Card(
@@ -2411,6 +2419,7 @@ internal fun NexusApp(accessToken: String) {
                             }
                         }
 
+                        if (BuildConfig.NEXUS_DEVICE_ROLE == "controller") {
                         OutlinedTextField(
                             value = calendarEventTitle,
                             onValueChange = { calendarEventTitle = it },
@@ -2532,6 +2541,7 @@ internal fun NexusApp(accessToken: String) {
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
+                        }
                         }
                     }
 
