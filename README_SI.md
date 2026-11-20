@@ -49,6 +49,7 @@ GitHub Actions run #85 සාර්ථකව අවසන් වී ඇති �
 - Target APK එකෙන් Controller දුරකථනයෙන් ලැබෙන Pairing කේතය පමණක් ඇතුළත් කළ හැකි අතර Chat, Notes, Saved, Memory, Project Progress සහ Controller Dashboard පහසුකම් පෙන්වන්නේ නැත.
 - APK දෙකම දැනට තිබෙන `com.nexusai.app` Package ID එක සහ එකම Release Signing Key එක භාවිත කරයි. ඒවා වෙන වෙනම දුරකථන දෙකකට ස්ථාපනය කිරීමට සැලසුම් කර ඇත.
 - Firebase Android Config එක GitHub Actions Secret එකෙන් build වෙලාවේ පමණක් ලබාගනී; repository එකට commit නොකරයි.
+- Controller APK එකේ Paired Devices ලැයිස්තුවෙන් Target එකට Wake Signal එකක් යැවිය හැක. Backend එක Controller/Target Role පරීක්ෂා කරයි.
 - FCM wake message එක ලැබුණු විට Target දුරකථනය authenticated heartbeat එකක් යවා last-seen තත්ත්වය යාවත්කාලීන කරයි. Notification permission ලබාදී ඇත්නම් දැනුම්දීමක් ද පෙන්වයි.
 - FCM wake එක Remote Screen හෝ Touch Control ක්‍රියාත්මක බව අදහස් නොකරයි. එම පහසුකම් සඳහා වෙනම Android consent සහ permission ක්‍රියාත්මක කිරීම අවශ්‍යය.
 
