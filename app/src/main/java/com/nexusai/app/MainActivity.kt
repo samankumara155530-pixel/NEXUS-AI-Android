@@ -291,6 +291,12 @@ internal fun NexusApp(accessToken: String) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // Retry FCM token registration on authenticated app launch in case
+    // the first attempt happened before pairing or during a network outage.
+    LaunchedEffect(Unit) {
+        NexusPushManager.registerCurrentToken(context)
+    }
+
     var themeMode by remember {
         mutableStateOf(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
