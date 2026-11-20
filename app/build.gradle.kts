@@ -63,11 +63,13 @@ android {
             dimension = "deviceRole"
             buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"controller\"")
             versionNameSuffix = "-controller"
+            manifestPlaceholders["appLabel"] = "NEXUS AI Controller"
         }
         create("target") {
             dimension = "deviceRole"
             buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"target\"")
             versionNameSuffix = "-target"
+            manifestPlaceholders["appLabel"] = "NEXUS AI Target"
         }
     }
 
