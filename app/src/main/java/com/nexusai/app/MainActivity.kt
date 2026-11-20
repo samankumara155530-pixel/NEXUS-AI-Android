@@ -348,6 +348,11 @@ internal fun NexusApp(accessToken: String) {
         ActivityResultContracts.RequestPermission()
     ) { }
 
+    // Notification permission is requested when the target device is paired.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
     // MICROPHONE PERMISSION
 
     val microphonePermissionLauncher =
