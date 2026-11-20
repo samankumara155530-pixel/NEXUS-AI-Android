@@ -2615,7 +2615,7 @@ internal fun NexusApp(accessToken: String) {
                         val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
                         val completed = remember {
                             mutableStateListOf<Int>().apply {
-                                addAll(roadmapPrefs.getStringSet("completed_items", emptySet())
+                                addAll(roadmapPrefs.getStringSet("completed_items", emptySet()).orEmpty()
                                     .mapNotNull { it.toIntOrNull() }
                                     .filter { it in roadmap.indices })
                             }
