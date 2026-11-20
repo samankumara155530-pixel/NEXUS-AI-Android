@@ -2184,12 +2184,11 @@ internal fun NexusApp(accessToken: String) {
                                         color = NexusCyan
                                     )
                                     TextButton(onClick = { copyText(devicePairCode) }) {
-                                        Text(if (sinhala) "කේතය Copy කරන්න" else                                 if (BuildConfig.NEXUS_DEVICE_ROLE == "target") {
-"Copy code")
+                                        Text(if (sinhala) "කේතය Copy කරන්න" else "Copy code")
                                     }
                                 }
                                 }
-
+                                if (BuildConfig.NEXUS_DEVICE_ROLE == "target") {
                                 OutlinedTextField(
                                     value = deviceClaimCode,
                                     onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
