@@ -54,20 +54,20 @@ internal object NexusPushManager {
         }
     }
 
+    // FirebaseMessagingService invokes onMessageReceived on a worker thread.
+    // Complete the short authenticated heartbeat before returning from the callback.
     fun handleWake(context: Context) {
-        executor.execute {
-            try {
-                val accessToken = NexusAuthManager.restoreSession(context) ?: return@execute
-                val deviceId = stableDeviceId(context) ?: return@execute
-                post(
-                    "/devices/heartbeat",
-                    accessToken,
-                    JSONObject().put("deviceId", deviceId)
-                )
-                NexusWakeNotification.show(context)
-            } catch (error: Exception) {
-                Log.w(TAG, "NEXUS wake heartbeat failed", error)
-            }
+        try {
+            val accessToken = NexusAuthManager.restoreSession(context) ?: return
+            val deviceId = stableDeviceId(context) ?: return
+            post(
+                "/devices/heartbeat",
+                accessToken,
+                JSONObject().put("deviceId", deviceId)
+            )
+            NexusWakeNotification.show(context)
+        } catch (error: Exception) {
+            Log.w(TAG, "NEXUS wake heartbeat failed", error)
         }
     }
 
@@ -80,8 +80,8 @@ internal object NexusPushManager {
         val connection = (URL("$BACKEND_URL$path").openConnection() as HttpURLConnection)
         try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 15000
-            connection.readTimeout = 20000
+            connection.connectTimeout = 10000
+            connection.readTimeout = 15000
             connection.doOutput = true
             connection.setRequestProperty("Authorization", "Bearer $accessToken")
             connection.setRequestProperty("Content-Type", "application/json")
