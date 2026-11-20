@@ -1,4 +1,4 @@
-# NEXUS AI Android — v1.4.2
+# NEXUS AI Android — v1.5.0
 
 මෙය Kotlin + Jetpack Compose භාවිතයෙන් සකස් කළ NEXUS AI Android යෙදුමයි. Android APK එක GitHub Actions මඟින් build කර පරීක්ෂා කර ඇත.
 
@@ -18,22 +18,17 @@
 
 Calendar බොත්තම Android Calendar event form එකක් විවෘත කරයි. දැනට එය “NEXUS AI Event” යන පෙරනිමි මාතෘකාව සහ ඉදිරි පැයක ආරම්භක වේලාවක් යොදයි. පරිශීලකයා Calendar යෙදුමේදී විස්තර පරීක්ෂා කර Save කළ යුතුය. Chat විධානයකින් ස්වයංක්‍රීයව දිනය/වේලාව විග්‍රහ කර event එකක් සුරැකීම තවම සම්පූර්ණ කර නැත.
 
-## Device Link පිළිබඳ තත්ත්වය
+## Device Link සහ Controller / Target APK
 
-දෙවන Android දුරකථනය Pair කිරීම, දුරස්ථ app launch, සහ අවසර කළමනාකරණය තවම ක්‍රියාත්මක කර නැත. ඒ සඳහා authenticated backend pairing flow එකක්, device registration, සහ අවසර මත පදනම් වූ Android-side actions අවශ්‍ය වේ. Android platform restrictions අනුව Camera, Microphone, Location වැනි සංවේදී පහසුකම් සඳහා අවශ්‍ය පරිශීලක අවසර අනිවාර්ය වේ.
+මෙම release එකේ Android APK දෙකක් වෙන වෙනම build කරයි.
 
-## Update / Signing
-
-- Application ID: `com.nexusai.app`
-- Version: `1.4.2`
-- Version Code: `8`
-- සෑම installable update එකකදීම versionCode වැඩි කළ යුතුය.
-- දැනට ඇති app එකට update install කිරීමට එකම package ID සහ එකම signing key භාවිත කළ යුතුය.
-- Signing secrets GitHub Actions secrets තුළ පමණක් තබාගන්න; keystore/password values source code හෝ chat තුළ ඇතුළත් නොකරන්න.
-
-## Build තත්ත්වය
-
-GitHub Actions run #85 සාර්ථකව අවසන් වී ඇති අතර release APK artifact එක නිර්මාණය වී ඇත. එය සැබෑ දුරකථනයක install කර Calendar, chat, camera, permissions සහ update-installation පරීක්ෂා කිරීම තවම වෙනම කළ යුතුය.
+- **Controller APK:** Chat, Notes, Saved, Memory, Project Progress, Settings, Pairing Code Generate කිරීම, Paired Devices Dashboard සහ Target Wake Signal යැවීම.
+- **Target APK:** Controller වෙතින් ලැබෙන Pairing Code එක Claim කිරීම, Target setup සහ Settings. Controller Dashboard, Pairing Code Generate කිරීම සහ Controller Voice Engine පෙන්වන්නේ නැත.
+- APK දෙකම `com.nexusai.app` package ID එක සහ දැනට භාවිත කරන එකම release signing key එක රඳවා ගනී. ඒවා වෙන වෙනම භෞතික දුරකථන දෙකකට ස්ථාපනය කළ යුතුය; එකම දුරකථනයේ දෙකම එකවර ස්ථාපනය කළ නොහැක.
+- Pairing සහ device role තීරණය backend එකෙන් තහවුරු කරයි. APK එකේ UI role marker එක පමණක් authorization ලෙස භාවිත නොකරයි.
+- Firebase Android configuration එක GitHub Actions Secret එකෙන් build වෙලාවේ පමණක් ලබාගනී; repository එකට commit නොකරයි.
+- Pair වූ උපාංග දෙකම FCM token register කරයි. Controller එකෙන් Target එකට Wake Signal යැවූ විට Target එක authenticated heartbeat එකක් යවා last-seen තත්ත්වය යාවත්කාලීන කරයි. Notification permission ලබාදී ඇත්නම් notification එකක් ද පෙන්වයි.
+- මෙම FCM wake පහසුකම Remote Screen Capture, Remote Touch Control, Camera Streaming හෝ Microphone Streaming නොවේ. එම පහසුකම් මෙම release එකෙන් සපයන්නේ නැත.
 
 ## ආරක්ෂාව
 
@@ -41,16 +36,3 @@ GitHub Actions run #85 සාර්ථකව අවසන් වී ඇති �
 - Chat backend එකේ user authentication සහ authorization server-side තහවුරු කළ යුතුය.
 - දෙවන device එකකට commands යැවීමේදී device ownership, explicit pairing, revocation සහ audit log අනිවාර්ය කරන්න.
 
-
-## Controller සහ Target APK වෙන් කිරීම
-
-- `feature/controller-target-apk-split` branch එකේ Controller සහ Target Build Variants දෙක සකස් කරමින් පවතී.
-- Controller APK එකෙන් Pairing කේත සාදා Paired Devices ලැයිස්තුව පාලනය කළ හැක.
-- Target APK එකෙන් Controller දුරකථනයෙන් ලැබෙන Pairing කේතය පමණක් ඇතුළත් කළ හැකි අතර Chat, Notes, Saved, Memory, Project Progress සහ Controller Dashboard පහසුකම් පෙන්වන්නේ නැත.
-- APK දෙකම දැනට තිබෙන `com.nexusai.app` Package ID එක සහ එකම Release Signing Key එක භාවිත කරයි. ඒවා වෙන වෙනම දුරකථන දෙකකට ස්ථාපනය කිරීමට සැලසුම් කර ඇත.
-- Firebase Android Config එක GitHub Actions Secret එකෙන් build වෙලාවේ පමණක් ලබාගනී; repository එකට commit නොකරයි.
-- Controller APK එකේ Paired Devices ලැයිස්තුවෙන් Target එකට Wake Signal එකක් යැවිය හැක. Backend එක Controller/Target Role පරීක්ෂා කරයි.
-- FCM wake message එක ලැබුණු විට Target දුරකථනය authenticated heartbeat එකක් යවා last-seen තත්ත්වය යාවත්කාලීන කරයි. Notification permission ලබාදී ඇත්නම් දැනුම්දීමක් ද පෙන්වයි.
-- FCM wake එක Remote Screen හෝ Touch Control ක්‍රියාත්මක බව අදහස් නොකරයි. එම පහසුකම් සඳහා වෙනම Android consent සහ permission ක්‍රියාත්මක කිරීම අවශ්‍යය.
-
-සවිස්තර සැලැස්ම: `docs/CONTROLLER_TARGET_APK_SPLIT.md`
