@@ -7,3 +7,6 @@ local.properties
 
 # Firebase client configuration stays local; inject securely during builds
 **/google-services.json
+
+# Firebase Android configuration (provided securely by CI)
+app/google-services.json

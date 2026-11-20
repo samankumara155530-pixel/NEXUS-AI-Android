@@ -4,13 +4,24 @@ name: Build NEXUS AI APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/controller-target-apk-split
 
 permissions:
   contents: read
 
+concurrency:
+  group: nexus-role-apk-validation-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [controller, target]
 
     steps:
       - name: Checkout source
@@ -28,7 +39,7 @@ jobs:
       - name: Install XML validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxml2-utils
+          sudo apt-get install -y libxml2-utils jq
 
       - name: Validate Android Manifest
         run: |
@@ -38,6 +49,18 @@ jobs:
 
       - name: Install Android packages
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Prepare Firebase Android configuration
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::FIREBASE_GOOGLE_SERVICES_JSON_BASE64 is missing from GitHub Actions secrets."
+            exit 1
+          fi
+          echo "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
+          jq -e '.client[] | select(.client_info.android_client_info.package_name == "com.nexusai.app")' app/google-services.json >/dev/null
+          echo "Firebase Android package configuration verified."
 
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -58,20 +81,41 @@ jobs:
           echo "$NEXUS_KEYSTORE_BASE64" | base64 --decode > app/nexus-upload-key.jks
           echo "NEXUS_KEYSTORE_PATH=nexus-upload-key.jks" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
+      - name: Build signed ${{ matrix.role }} release APK
         env:
           NEXUS_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_KEYSTORE_PASSWORD }}
           NEXUS_KEY_ALIAS: ${{ secrets.NEXUS_KEY_ALIAS }}
           NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
-        run: gradle assembleRelease --stacktrace
+        run: gradle assemble${{ matrix.role == 'controller' && 'Controller' || 'Target' }}Release --stacktrace
 
-      - name: Upload signed release APK
+      - name: Verify signed APK identity and release metadata
+        env:
+          APK_ROLE: ${{ matrix.role }}
+        run: |
+          set -euo pipefail
+          APK="$(find "app/build/outputs/apk/${APK_ROLE}/release" -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          if [ -z "$APK" ]; then
+            echo "::error::No release APK found for ${APK_ROLE}."
+            exit 1
+          fi
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$APK")"
+          echo "$BADGING" | grep -F "package: name='com.nexusai.app' versionCode='14' versionName='1.5.0-${APK_ROLE}'"
+          if [ "$APK_ROLE" = "controller" ]; then
+            echo "$BADGING" | grep -F "application-label:'NEXUS AI Controller'"
+          else
+            echo "$BADGING" | grep -F "application-label:'NEXUS AI Target'"
+          fi
+          echo "Signed ${APK_ROLE} APK identity and release metadata verified."
+
+      - name: Upload signed ${{ matrix.role }} release APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-AI-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: NEXUS-AI-${{ matrix.role }}-release-apk
+          path: app/build/outputs/apk/${{ matrix.role }}/release/*.apk
           if-no-files-found: error
 
-      - name: Remove signing key
+      - name: Remove signing key and Firebase config
         if: always()
-        run: rm -f app/nexus-upload-key.jks
+        run: rm -f app/nexus-upload-key.jks app/google-services.json

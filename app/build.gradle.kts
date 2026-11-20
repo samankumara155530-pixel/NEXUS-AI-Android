@@ -3,6 +3,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -14,8 +15,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Increase versionCode for every installable update.
-        versionCode = 13
-        versionName = "1.4.7"
+        versionCode = 14
+        versionName = "1.5.0"
     }
 
     signingConfigs {
@@ -51,6 +52,25 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    // Separate installable roles while preserving the same package ID and signing key.
+    // Each APK is intended for a different physical phone.
+    flavorDimensions += "deviceRole"
+    productFlavors {
+        create("controller") {
+            dimension = "deviceRole"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"controller\"")
+            versionNameSuffix = "-controller"
+            manifestPlaceholders["appLabel"] = "NEXUS AI Controller"
+        }
+        create("target") {
+            dimension = "deviceRole"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"target\"")
+            versionNameSuffix = "-target"
+            manifestPlaceholders["appLabel"] = "NEXUS AI Target"
+        }
     }
 
     packaging {
@@ -70,6 +90,10 @@ kotlin {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // Firebase Cloud Messaging for authenticated device wake signals.
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
