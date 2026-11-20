@@ -46,7 +46,7 @@ GitHub Actions run #85 සාර්ථකව අවසන් වී ඇති �
 
 - `feature/controller-target-apk-split` branch එකේ Controller සහ Target Build Variants දෙක සකස් කරමින් පවතී.
 - Controller APK එකෙන් Pairing කේත සාදා Paired Devices ලැයිස්තුව පාලනය කළ හැක.
-- Target APK එකෙන් Controller දුරකථනයෙන් ලැබෙන Pairing කේතය පමණක් ඇතුළත් කළ හැක.
+- Target APK එකෙන් Controller දුරකථනයෙන් ලැබෙන Pairing කේතය පමණක් ඇතුළත් කළ හැකි අතර Chat, Notes, Saved, Memory, Project Progress සහ Controller Dashboard පහසුකම් පෙන්වන්නේ නැත.
 - APK දෙකම දැනට තිබෙන `com.nexusai.app` Package ID එක සහ එකම Release Signing Key එක භාවිත කරයි. ඒවා වෙන වෙනම දුරකථන දෙකකට ස්ථාපනය කිරීමට සැලසුම් කර ඇත.
 - Firebase Android Config එක GitHub Actions Secret එකෙන් build වෙලාවේ පමණක් ලබාගනී; repository එකට commit නොකරයි.
 - FCM wake message එක ලැබුණු විට Target දුරකථනය authenticated heartbeat එකක් යවා last-seen තත්ත්වය යාවත්කාලීන කරයි. Notification permission ලබාදී ඇත්නම් දැනුම්දීමක් ද පෙන්වයි.
