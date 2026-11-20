@@ -40,3 +40,16 @@ GitHub Actions run #85 සාර්ථකව අවසන් වී ඇති �
 - API keys සහ service-role secrets Android APK තුළ hardcode නොකරන්න.
 - Chat backend එකේ user authentication සහ authorization server-side තහවුරු කළ යුතුය.
 - දෙවන device එකකට commands යැවීමේදී device ownership, explicit pairing, revocation සහ audit log අනිවාර්ය කරන්න.
+
+
+## Controller සහ Target APK වෙන් කිරීම
+
+- `feature/controller-target-apk-split` branch එකේ Controller සහ Target Build Variants දෙක සකස් කරමින් පවතී.
+- Controller APK එකෙන් Pairing කේත සාදා Paired Devices ලැයිස්තුව පාලනය කළ හැක.
+- Target APK එකෙන් Controller දුරකථනයෙන් ලැබෙන Pairing කේතය පමණක් ඇතුළත් කළ හැක.
+- APK දෙකම දැනට තිබෙන `com.nexusai.app` Package ID එක සහ එකම Release Signing Key එක භාවිත කරයි. ඒවා වෙන වෙනම දුරකථන දෙකකට ස්ථාපනය කිරීමට සැලසුම් කර ඇත.
+- Firebase Android Config එක GitHub Actions Secret එකෙන් build වෙලාවේ පමණක් ලබාගනී; repository එකට commit නොකරයි.
+- FCM wake message එක ලැබුණු විට Target දුරකථනය authenticated heartbeat එකක් යවා last-seen තත්ත්වය යාවත්කාලීන කරයි. Notification permission ලබාදී ඇත්නම් දැනුම්දීමක් ද පෙන්වයි.
+- FCM wake එක Remote Screen හෝ Touch Control ක්‍රියාත්මක බව අදහස් නොකරයි. එම පහසුකම් සඳහා වෙනම Android consent සහ permission ක්‍රියාත්මක කිරීම අවශ්‍යය.
+
+සවිස්තර සැලැස්ම: `docs/CONTROLLER_TARGET_APK_SPLIT.md`
