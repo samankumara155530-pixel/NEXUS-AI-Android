@@ -65,7 +65,7 @@
     <!-- APPLICATION -->
     <application
         android:allowBackup="false"
-        android:label="NEXUS AI"
+        android:label="${appLabel}"
         android:icon="@drawable/nexus_launcher_icon"
         android:roundIcon="@drawable/nexus_launcher_icon"
         android:supportsRtl="true"
