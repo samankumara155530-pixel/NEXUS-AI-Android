@@ -2338,9 +2338,15 @@ internal fun NexusApp(accessToken: String) {
                                             Icon(Icons.Default.Smartphone, null, tint = NexusCyan)
                                             Spacer(Modifier.width(10.dp))
                                             Column(modifier = Modifier.weight(1f)) {
+                                                val deviceRole = device.optString("device_role", "unassigned")
                                                 Text(device.optString("device_name", "NEXUS Android"), fontWeight = FontWeight.SemiBold)
                                                 Text(
                                                     device.optString("platform", "Android") +
+                                                        " • " + when (deviceRole) {
+                                                            "controller" -> if (sinhala) "පාලකය" else "Controller"
+                                                            "target" -> if (sinhala) "පාලනය වන" else "Target"
+                                                            else -> if (sinhala) "නියම කර නැත" else "Unassigned"
+                                                        } +
                                                         if (revoked) " • " + (if (sinhala) "අවලංගුයි" else "Revoked")
                                                         else " • " + (if (sinhala) "සම්බන්ධයි" else "Paired"),
                                                     style = MaterialTheme.typography.bodySmall,
@@ -2355,6 +2361,36 @@ internal fun NexusApp(accessToken: String) {
                                             }
                                             Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
                                                 tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
+                                        }
+                                        if (!revoked && device.optString("device_role") == "target") {
+                                            OutlinedButton(
+                                                enabled = !deviceRequestBusy,
+                                                onClick = {
+                                                    val targetDeviceId = device.optString("device_id")
+                                                    scope.launch {
+                                                        deviceRequestBusy = true
+                                                        try {
+                                                            deviceApiPost(
+                                                                "devices/$targetDeviceId/push/wake",
+                                                                JSONObject().put("controllerDeviceId", getStableDeviceId(context))
+                                                            )
+                                                            deviceStatusMessage = if (sinhala)
+                                                                "Target දුරකථනයට Wake Signal එක යැව්වා."
+                                                            else
+                                                                "Wake signal sent to the target phone."
+                                                        } catch (e: Exception) {
+                                                            deviceStatusMessage = (e.message ?: "Could not send wake signal").take(120)
+                                                        } finally {
+                                                            deviceRequestBusy = false
+                                                        }
+                                                    }
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Icon(Icons.Default.Notifications, null)
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(if (sinhala) "Target අවදි කරන්න" else "Wake target")
+                                            }
                                         }
                                     }
                                     if (pairedDevices.size > uniqueDevices.size) {
