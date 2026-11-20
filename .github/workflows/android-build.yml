@@ -4,6 +4,9 @@ name: Build NEXUS AI APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/controller-target-apk-split
 
 permissions:
   contents: read
@@ -43,6 +46,18 @@ jobs:
       - name: Install Android packages
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Prepare Firebase Android configuration
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::FIREBASE_GOOGLE_SERVICES_JSON_BASE64 is missing from GitHub Actions secrets."
+            exit 1
+          fi
+          echo "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
+          jq -e '.client[] | select(.client_info.android_client_info.package_name == "com.nexusai.app")' app/google-services.json >/dev/null
+          echo "Firebase Android package configuration verified."
+
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -76,6 +91,6 @@ jobs:
           path: app/build/outputs/apk/${{ matrix.role }}/release/*.apk
           if-no-files-found: error
 
-      - name: Remove signing key
+      - name: Remove signing key and Firebase config
         if: always()
-        run: rm -f app/nexus-upload-key.jks
+        run: rm -f app/nexus-upload-key.jks app/google-services.json
