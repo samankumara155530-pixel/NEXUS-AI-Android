@@ -51,6 +51,23 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    // Separate installable roles while preserving the same package ID and signing key.
+    // Each APK is intended for a different physical phone.
+    flavorDimensions += "deviceRole"
+    productFlavors {
+        create("controller") {
+            dimension = "deviceRole"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"controller\"")
+            versionNameSuffix = "-controller"
+        }
+        create("target") {
+            dimension = "deviceRole"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"target\"")
+            versionNameSuffix = "-target"
+        }
     }
 
     packaging {
