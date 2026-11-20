@@ -7,7 +7,7 @@ Produce two signed Android APK variants from the same NEXUS AI source tree:
 - **Controller** — starts device pairing and displays the paired-device dashboard.
 - **Target** — claims a pairing code and does not display controller pairing-generation or paired-device management controls.
 
-Both variants retain the existing NEXUS AI application features outside the Device Link role-specific area.
+The Controller variant retains the full NEXUS AI workspace. The Target variant is intentionally restricted to the target pairing/setup screen and general settings; it does not expose the chat, notes, saved items, memory center, project roadmap, controller device dashboard, or controller voice-engine controls.
 
 ## Compatibility and installation
 
