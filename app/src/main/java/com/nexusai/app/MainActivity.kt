@@ -343,11 +343,6 @@ internal fun NexusApp(accessToken: String) {
         mutableStateOf(false)
     }
 
-    // Notification permission is requested only when the target device is paired.
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
-
     // Notification permission is requested when the target device is paired.
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
