@@ -30,6 +30,19 @@ Calendar බොත්තම Android Calendar event form එකක් විව�
 - Pair වූ උපාංග දෙකම FCM token register කරයි. Controller එකෙන් Target එකට Wake Signal යැවූ විට Target එක authenticated heartbeat එකක් යවා last-seen තත්ත්වය යාවත්කාලීන කරයි. Notification permission ලබාදී ඇත්නම් notification එකක් ද පෙන්වයි.
 - මෙම FCM wake පහසුකම Remote Screen Capture, Remote Touch Control, Camera Streaming හෝ Microphone Streaming නොවේ. එම පහසුකම් මෙම release එකෙන් සපයන්නේ නැත.
 
+## Update / Signing
+
+- Application ID: `com.nexusai.app`
+- Version: `1.5.0`
+- Version Code: `14`
+- සෑම installable update එකකදීම versionCode වැඩි කළ යුතුය.
+- දැනට ඇති app එකට update install කිරීමට එකම package ID සහ එකම signing key භාවිත කරයි.
+- Signing secrets GitHub Actions secrets තුළ පමණක් තබාගන්න; keystore/password values source code හෝ chat තුළ ඇතුළත් නොකරන්න.
+
+## Build තත්ත්වය
+
+GitHub Actions run #131 සාර්ථකව අවසන් වී ඇත. Controller සහ Target signed Release APK දෙකම නිර්මාණය කර, signature, package ID, versionCode 14, versionName සහ role-specific launcher label CI තුළ සාර්ථකව පරීක්ෂා කර artifacts ලෙස upload කර ඇත. ඉතිරිව ඇත්තේ APK දෙක වෙන වෙනම දුරකථනවල install කර Pairing සහ FCM delivery සැබෑ උපාංගවල පරීක්ෂා කිරීමයි.
+
 ## ආරක්ෂාව
 
 - API keys සහ service-role secrets Android APK තුළ hardcode නොකරන්න.
