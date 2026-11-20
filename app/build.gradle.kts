@@ -13,9 +13,10 @@ android {
         applicationId = "com.nexusai.app"
         minSdk = 26
         targetSdk = 35
-        // Increase versionCode for every installable update.
-        versionCode = 13
-        versionName = "1.4.7"
+        // Target device currently runs 1.5.0 (versionCode 14).
+        // This FCM update must install as an in-place update.
+        versionCode = 15
+        versionName = "1.5.1"
     }
 
     signingConfigs {
