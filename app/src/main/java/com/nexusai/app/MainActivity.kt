@@ -2604,9 +2604,6 @@ internal fun NexusApp(accessToken: String) {
 
                     // SETTINGS
 
-                        }
-                    }
-
                     Tab.PROGRESS -> {
                         val roadmap = listOf(
                             if (sinhala) "Stable Device ID සහ Duplicate ගැටලුව ස්ථිරව විසඳීම" else "Stable Device ID and permanent duplicate fix",
@@ -2633,7 +2630,7 @@ internal fun NexusApp(accessToken: String) {
                         val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
                         val completed = remember {
                             mutableStateListOf<Int>().apply {
-                                addAll(roadmapPrefs.getStringSet("completed_items", emptySet())
+                                addAll((roadmapPrefs.getStringSet("completed_items", emptySet()) ?: emptySet())
                                     .mapNotNull { it.toIntOrNull() }
                                     .filter { it in roadmap.indices })
                             }
