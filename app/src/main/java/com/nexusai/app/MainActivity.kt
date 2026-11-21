@@ -508,6 +508,7 @@ internal fun NexusApp(accessToken: String) {
     var devicePairCode by remember { mutableStateOf("") }
     var deviceClaimCode by remember { mutableStateOf("") }
     var deviceStatusMessage by remember { mutableStateOf("") }
+    var fcmRegistrationStatus by remember { mutableStateOf("FCM පරීක්ෂා කර නැහැ.") }
     var deviceRequestBusy by remember { mutableStateOf(false) }
     val pairedDevices = remember { mutableStateListOf<JSONObject>() }
     var deviceListLoaded by remember { mutableStateOf(false) }
@@ -747,10 +748,11 @@ internal fun NexusApp(accessToken: String) {
 
     LaunchedEffect(accessToken) {
         try {
-            NexusFcm.registerCurrentInstallation(context)
+            NexusFcm.registerCurrentInstallation(context, accessToken)
+            fcmRegistrationStatus = if (sinhala) "FCM Token: සේවාදායකයේ ලියාපදිංචි වී ඇත." else "FCM token: registered on server."
         } catch (error: Exception) {
-            // A not-yet-paired device is expected to receive 404 until pairing completes.
-            android.util.Log.i("NEXUS_FCM", "Initial token registration deferred: ${error.message}")
+            fcmRegistrationStatus = if (sinhala) "FCM Token ලියාපදිංචිය අසාර්ථකයි: ${error.message}" else "FCM registration failed: ${error.message}"
+            android.util.Log.e("NEXUS_FCM", "Initial token registration failed", error)
         }
     }
 
@@ -2163,8 +2165,9 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
-                                                NexusFcm.registerCurrentInstallation(context)
-                                                deviceStatusMessage = if (sinhala) "Pairing කේතය සූදානම්. FCM Token ලියාපදිංචි කළා." else "Pairing code ready. FCM token registered."
+                                                NexusFcm.registerCurrentInstallation(context, accessToken)
+                                                fcmRegistrationStatus = if (sinhala) "FCM Token: සේවාදායකයේ ලියාපදිංචි වී ඇත." else "FCM token registered on server."
+                                                deviceStatusMessage = if (sinhala) "Pairing කේතය සූදානම්." else "Pairing code ready."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
@@ -2214,7 +2217,8 @@ internal fun NexusApp(accessToken: String) {
                                                 )
                                                 deviceClaimCode = ""
                                                 NexusFcm.registerCurrentInstallation(context)
-                                                deviceStatusMessage = if (sinhala) "දුරකථනය Pair කළා. FCM Token ලියාපදිංචි කළා." else "Phone paired and FCM token registered."
+                                                fcmRegistrationStatus = if (sinhala) "FCM Token: සේවාදායකයේ ලියාපදිංචි වී ඇත." else "FCM token registered on server."
+                                                deviceStatusMessage = if (sinhala) "දුරකථනය Pair කළා." else "Phone paired."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
@@ -2231,6 +2235,8 @@ internal fun NexusApp(accessToken: String) {
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
                                 }
+                                Text(fcmRegistrationStatus, color = MaterialTheme.colorScheme.secondary,
+                                    style = MaterialTheme.typography.bodySmall)
                             }
                         }
 
