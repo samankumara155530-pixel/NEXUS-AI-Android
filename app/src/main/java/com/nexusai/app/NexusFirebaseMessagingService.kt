@@ -54,7 +54,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 
         if (data["type"] == "NEXUS_REMOTE_REQUEST" && data["action"] == "REQUEST_APPROVAL") {
             val feature: String = data.get("feature") ?: return
-            val allowedFeatures: Set<String> = setOf("camera", "microphone", "gallery", "location")
+            val allowedFeatures: Set<String> = setOf("camera", "microphone", "gallery", "location", "screen")
             if (feature !in allowedFeatures) return
             getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE).edit()
                 .putString("pending_remote_request_id", requestId)
@@ -128,6 +128,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
             "camera" -> "Camera access request"
             "microphone" -> "Microphone access request"
             "gallery" -> "Gallery access request"
+            "screen" -> "Screen sharing request"
             else -> "Location access request"
         }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -244,6 +245,27 @@ internal object NexusFcm {
                 .put("deviceId", getStableDeviceId(context))
                 .put("requestId", requestId)
                 .put("stage", stage)
+        )
+    }
+
+    suspend fun respondRemote(
+        context: android.content.Context,
+        requestId: String,
+        status: String,
+        result: JSONObject
+    ) {
+        val accessToken = withContext(Dispatchers.IO) {
+            NexusAuthManager.restoreSession(context)
+        } ?: throw IllegalStateException("NEXUS session unavailable")
+        post(
+            context,
+            accessToken,
+            "/devices/remote/respond",
+            JSONObject()
+                .put("deviceId", getStableDeviceId(context))
+                .put("requestId", requestId)
+                .put("status", status)
+                .put("result", result)
         )
     }
 
