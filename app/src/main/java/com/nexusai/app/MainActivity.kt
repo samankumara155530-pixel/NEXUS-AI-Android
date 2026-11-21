@@ -3497,7 +3497,14 @@ internal fun NexusApp(accessToken: String) {
                                                         .remove("remote_audio_result_size")
                                                         .remove("remote_audio_result_mime")
                                                         .remove("remote_audio_result_error")
+                                                        .remove("pending_remote_request_id")
+                                                        .remove("pending_remote_feature")
+                                                        .remove("pending_remote_requires_approval")
+                                                        .remove("pending_remote_created_at")
                                                         .apply()
+                                                    pendingRemoteRequestId = ""
+                                                    pendingRemoteFeature = ""
+                                                    pendingRemoteRequiresApproval = true
                                                     remoteSessionRequestId = ""
                                                     remoteSessionExpiresAt = 0L
                                                     deviceStatusMessage = if (sinhala) "Remote Session එක නතර කළා." else "Remote session stopped."
