@@ -3065,7 +3065,7 @@ internal fun NexusApp(accessToken: String) {
                                                                 val sessionActive = sent.optBoolean("sessionActive", false)
                                                                 val pollIntervalMs = if (sessionActive) 10_000L else 2_000L
                                                                 val maxAttempts = when {
-                                                                    sessionActive -> 168
+                                                                    sessionActive -> 174
                                                                     feature.third == "screen" -> 40
                                                                     feature.third in setOf("camera", "gallery", "microphone") -> 180
                                                                     else -> 30
