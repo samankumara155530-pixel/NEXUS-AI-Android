@@ -2735,7 +2735,7 @@ internal fun NexusApp(accessToken: String) {
                                     }
                                 }
                                 Text(
-                                    if (sinhala) "Screen බොත්තමෙන් Target පරිශීලකයාගේ අවසරය ලබාගෙන එක් තිර දර්ශනයක් ලබාගත හැක. සජීවී වීඩියෝ සහ touch control තවම නැත." else "Screen requests one consent-approved Target screen preview. Live video streaming and remote touch control are not implemented yet.",
+                                    if (sinhala) "Screen බොත්තමෙන් Target පරිශීලකයාගේ අවසරය ලබාගෙන තත්පර 60ක් දක්වා අඩු frame-rate තිර දර්ශනයක් බලන්න. Touch control තවම නැත." else "Screen requests a consent-approved low-frame-rate Target screen view for up to 60 seconds. Remote touch control is not implemented.",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary
                                 )
@@ -2889,7 +2889,7 @@ internal fun NexusApp(accessToken: String) {
                             Triple(if (sinhala) "Background Connection Service" else "Background Connection Service", if (sinhala) "Backend heartbeat පසු" else "After backend heartbeat", false),
                             Triple(if (sinhala) "Remote Camera සහ Photo Capture" else "Remote Camera and Photo Capture", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
                             Triple(if (sinhala) "Independent Remote Microphone" else "Independent Remote Microphone", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
-                            Triple(if (sinhala) "Remote Screen Preview" else "Remote Screen Preview", if (sinhala) "අනුමැතියෙන් එක් තිර දර්ශනයක් ලබාගැනීම එක් කළා; Live stream / touch control ඉතිරියි" else "One consented screen preview added; live stream / touch control remain", false),
+                            Triple(if (sinhala) "Remote Screen Sharing" else "Remote Screen Sharing", if (sinhala) "අනුමැතියෙන් 60s අඩු frame-rate screen view එක් කළා; touch control ඉතිරියි" else "Consented 60s low-frame-rate screen view added; touch control remains", false),
                             Triple(if (sinhala) "Gallery / Files / Location / Notifications" else "Gallery / Files / Location / Notifications", if (sinhala) "සැලසුම් අදියර" else "Planned", false)
                         )
                         val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
