@@ -2216,7 +2216,7 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 deviceClaimCode = ""
-                                                NexusFcm.registerCurrentInstallation(context)
+                                                NexusFcm.registerCurrentInstallation(context, accessToken)
                                                 fcmRegistrationStatus = if (sinhala) "FCM Token: සේවාදායකයේ ලියාපදිංචි වී ඇත." else "FCM token registered on server."
                                                 deviceStatusMessage = if (sinhala) "දුරකථනය Pair කළා." else "Phone paired."
                                             } catch (e: Exception) {
