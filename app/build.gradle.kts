@@ -39,8 +39,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Increase versionCode for every installable update.
-        versionCode = 16
-        versionName = "1.6.0"
+        versionCode = 17
+        versionName = "1.7.0"
         buildConfigField("String", "NEXUS_API_BASE_URL", "\"$nexusApiBaseUrl\"")
     }
 
