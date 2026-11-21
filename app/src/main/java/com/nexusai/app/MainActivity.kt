@@ -867,9 +867,16 @@ internal fun NexusApp(accessToken: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val sessionId = prefs.getString("remote_session_request_id", "").orEmpty()
         val sessionExpiry = prefs.getLong("remote_session_expires_at", 0L)
-        val isForeground = prefs.getBoolean("target_ui_foreground", false)
-        if (sessionId != remoteSessionRequestId || sessionExpiry <= System.currentTimeMillis() || !isForeground) {
+        if (sessionId != remoteSessionRequestId || sessionExpiry <= System.currentTimeMillis()) {
             return@LaunchedEffect
+        }
+        // If Android has the Target app in the background, wait until the user
+        // brings it forward. Background activity launches are intentionally avoided.
+        while (!prefs.getBoolean("target_ui_foreground", false)) {
+            if (prefs.getLong("remote_session_expires_at", 0L) <= System.currentTimeMillis()) {
+                return@LaunchedEffect
+            }
+            kotlinx.coroutines.delay(500)
         }
 
         val requestId = pendingRemoteRequestId
@@ -3408,7 +3415,7 @@ internal fun NexusApp(accessToken: String) {
             (pendingRemoteFeature == "session" || remoteSessionExpiresAt <= System.currentTimeMillis())
         ) {
             val featureLabel = when (pendingRemoteFeature) {
-                "session" -> if (sinhala) "විනාඩි 30ක Remote Session" else "30-minute remote session",
+                "session" -> if (sinhala) "විනාඩි 30ක Remote Session" else "30-minute remote session"
                 "camera" -> if (sinhala) "කැමරාව" else "Camera"
                 "microphone" -> if (sinhala) "මයික්‍රෆෝනය" else "Microphone"
                 "gallery" -> if (sinhala) "Gallery" else "Gallery"
