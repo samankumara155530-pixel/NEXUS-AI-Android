@@ -58,18 +58,20 @@ jobs:
           echo "$NEXUS_KEYSTORE_BASE64" | base64 --decode > app/nexus-upload-key.jks
           echo "NEXUS_KEYSTORE_PATH=nexus-upload-key.jks" >> "$GITHUB_ENV"
 
-      - name: Build signed release APK
+      - name: Build signed controller and target APKs
         env:
           NEXUS_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_KEYSTORE_PASSWORD }}
           NEXUS_KEY_ALIAS: ${{ secrets.NEXUS_KEY_ALIAS }}
           NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
-        run: gradle assembleRelease --stacktrace
+        run: gradle assembleControllerRelease assembleTargetRelease --stacktrace
 
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-AI-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: NEXUS-AI-controller-and-target-apks
+          path: |
+            app/build/outputs/apk/controller/release/*.apk
+            app/build/outputs/apk/target/release/*.apk
           if-no-files-found: error
 
       - name: Remove signing key
