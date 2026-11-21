@@ -45,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -334,7 +335,7 @@ internal fun NexusApp(accessToken: String) {
     }
 
     var tab by remember {
-        mutableStateOf(Tab.CHAT)
+        mutableStateOf(if (BuildConfig.DEVICE_ROLE == "target") Tab.TOOLS else Tab.CHAT)
     }
 
     var voiceEngineEnabled by remember {
@@ -512,6 +513,9 @@ internal fun NexusApp(accessToken: String) {
     var deviceRequestBusy by remember { mutableStateOf(false) }
     val pairedDevices = remember { mutableStateListOf<JSONObject>() }
     var deviceListLoaded by remember { mutableStateOf(false) }
+    var targetPaired by remember { mutableStateOf(false) }
+    var wakeBusy by remember { mutableStateOf(false) }
+    var wakeStatusMessage by remember { mutableStateOf("") }
 
     var prompt by remember {
         mutableStateOf("")
@@ -762,8 +766,17 @@ internal fun NexusApp(accessToken: String) {
     }
 
     LaunchedEffect(accessToken) {
-        // Re-register on launch so token rotation and reinstall/update are recovered.
-        registerCurrentFcmToken()
+        try {
+            val result = deviceApiGet("devices")
+            val list = result.optJSONArray("devices") ?: JSONArray()
+            val ownId = getStableDeviceId(context)
+            val ownDevice = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
+                .firstOrNull { it.optString("device_id") == ownId && it.isNull("revoked_at") }
+            if (BuildConfig.DEVICE_ROLE == "target") targetPaired = ownDevice?.optString("device_role") == "target"
+            if (ownDevice != null) registerCurrentFcmToken()
+        } catch (error: Exception) {
+            deviceStatusMessage = (error.message ?: "Device status unavailable").take(120)
+        }
     }
 
     LaunchedEffect(tab) {
@@ -1097,6 +1110,7 @@ internal fun NexusApp(accessToken: String) {
 
             bottomBar = {
 
+                if (BuildConfig.DEVICE_ROLE == "controller") {
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
                     tonalElevation = 12.dp
@@ -1197,6 +1211,7 @@ internal fun NexusApp(accessToken: String) {
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     )
+                }
                 }
             }
 
@@ -2118,14 +2133,64 @@ internal fun NexusApp(accessToken: String) {
                     // TOOLS
 
                     Tab.TOOLS -> {
-
                         ScreenTitle(
-                            if (sinhala)
-                                "NEXUS මෙවලම්"
-                            else
-                                "NEXUS Tools"
+                            if (sinhala) "Target දුරකථනය සම්බන්ධ කිරීම" else "Connect Target Phone"
                         )
-
+                        if (BuildConfig.DEVICE_ROLE == "target") {
+                            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
+                                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Icon(Icons.Default.PhoneAndroid, null, tint = NexusCyan, modifier = Modifier.size(42.dp))
+                                    Text(
+                                        if (targetPaired) {
+                                            if (sinhala) "Target දුරකථනය සාර්ථකව සම්බන්ධයි" else "Target phone is paired"
+                                        } else {
+                                            if (sinhala) "Controller දුරකථනයේ පෙන්වන ඉලක්කම් 8ක Pairing Number එක ඇතුළත් කරන්න." else "Enter the 8-digit pairing number shown on the Controller phone."
+                                        },
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (!targetPaired) {
+                                        OutlinedTextField(
+                                            value = deviceClaimCode,
+                                            onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            singleLine = true,
+                                            label = { Text("Pairing Number") }
+                                        )
+                                        Button(
+                                            enabled = !deviceRequestBusy && deviceClaimCode.length == 8,
+                                            onClick = {
+                                                scope.launch {
+                                                    deviceRequestBusy = true
+                                                    try {
+                                                        deviceApiPost(
+                                                            "devices/pair/claim",
+                                                            JSONObject().put("pairingCode", deviceClaimCode)
+                                                                .put("deviceName", android.os.Build.MODEL)
+                                                                .put("deviceId", getStableDeviceId(context))
+                                                        )
+                                                        deviceClaimCode = ""
+                                                        targetPaired = true
+                                                        registerCurrentFcmToken()
+                                                        deviceStatusMessage = if (sinhala) "Pairing සාර්ථකයි. Target සූදානම්." else "Pairing successful. Target is ready."
+                                                    } catch (error: Exception) {
+                                                        deviceStatusMessage = (error.message ?: "Pairing failed").take(120)
+                                                    } finally {
+                                                        deviceRequestBusy = false
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            if (deviceRequestBusy) CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                                            else Text(if (sinhala) "Pair කරන්න" else "Pair device")
+                                        }
+                                    }
+                                    if (deviceStatusMessage.isNotBlank()) {
+                                        Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                }
+                            }
+                        } else {
                         OutlinedButton(
                             onClick = { tab = Tab.PROGRESS },
                             modifier = Modifier.fillMaxWidth(),
@@ -2512,6 +2577,9 @@ internal fun NexusApp(accessToken: String) {
                     }
 
                     // SETTINGS
+
+                        }
+                    }
 
                     Tab.PROGRESS -> {
                         val roadmap = listOf(
