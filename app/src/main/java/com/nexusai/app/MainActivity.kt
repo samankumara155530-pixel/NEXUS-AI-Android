@@ -3052,7 +3052,12 @@ internal fun NexusApp(accessToken: String) {
                                                                 )
                                                                 val requestId = sent.optString("requestId")
                                                                 var status = "pending"
-                                                                for (attempt in 0 until (if (feature.third == "screen") 40 else 90)) {
+                                                                val maxAttempts = when (feature.third) {
+                                                                    "screen" -> 40
+                                                                    "camera", "gallery", "microphone" -> 180
+                                                                    else -> 30
+                                                                }
+                                                                for (attempt in 0 until maxAttempts) {
                                                                     kotlinx.coroutines.delay(2000)
                                                                     val update = deviceApiGet(
                                                                         "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
