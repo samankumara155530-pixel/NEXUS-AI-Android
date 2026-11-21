@@ -22,6 +22,10 @@
     <uses-permission
         android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
+    <!-- LOCATION (requested only when the user invokes a location feature) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
     <!-- NOTIFICATIONS -->
     <uses-permission
         android:name="android.permission.POST_NOTIFICATIONS" />
@@ -84,6 +88,15 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Firebase Cloud Messaging receiver; all remote actions still require target-side consent. -->
+        <service
+            android:name=".NexusFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
 
         <!-- NEXUS VOICE SERVICE -->
         <service
