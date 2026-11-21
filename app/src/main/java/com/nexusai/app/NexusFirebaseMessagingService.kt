@@ -248,6 +248,25 @@ internal object NexusFcm {
         )
     }
 
+    suspend fun uploadScreenFrame(
+        context: android.content.Context,
+        requestId: String,
+        frame: JSONObject
+    ) {
+        val accessToken = withContext(Dispatchers.IO) {
+            NexusAuthManager.restoreSession(context)
+        } ?: throw IllegalStateException("NEXUS session unavailable")
+        post(
+            context,
+            accessToken,
+            "/devices/remote/screen/frame",
+            JSONObject()
+                .put("deviceId", getStableDeviceId(context))
+                .put("requestId", requestId)
+                .put("frame", frame)
+        )
+    }
+
     suspend fun respondRemote(
         context: android.content.Context,
         requestId: String,
