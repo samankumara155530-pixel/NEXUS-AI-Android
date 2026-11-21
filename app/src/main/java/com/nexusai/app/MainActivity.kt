@@ -2266,41 +2266,6 @@ internal fun NexusApp(accessToken: String) {
                                         Text(if (sinhala) "කේතය Copy කරන්න" else "Copy code")
                                     }
                                 }
-                                OutlinedTextField(
-                                    value = deviceClaimCode,
-                                    onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    label = { Text(if (sinhala) "අනෙක් දුරකථනයේ Pairing කේතය" else "Pairing code from other phone") }
-                                )
-                                OutlinedButton(
-                                    enabled = !deviceRequestBusy && deviceClaimCode.length == 8,
-                                    onClick = {
-                                        scope.launch {
-                                            deviceRequestBusy = true
-                                            try {
-                                                deviceApiPost(
-                                                    "devices/pair/claim",
-                                                    JSONObject()
-                                                        .put("pairingCode", deviceClaimCode)
-                                                        .put("deviceName", android.os.Build.MODEL)
-                                                        .put("deviceId", getStableDeviceId(context))
-                                                )
-                                                deviceClaimCode = ""
-                                                registerCurrentFcmToken()
-                                                deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
-                                            } catch (e: Exception) {
-                                                deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
-                                            } finally {
-                                                deviceRequestBusy = false
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Text(if (sinhala) "මෙම දුරකථනය Pair කරන්න" else "Pair this phone")
-                                }
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
                                 }
