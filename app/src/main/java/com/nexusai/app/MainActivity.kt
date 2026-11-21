@@ -915,45 +915,6 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
-    fun launchRemotePhotoCapture() {
-        val uri = createCaptureOutputUri(false)
-        if (uri == null) {
-            remoteActionResult = JSONObject().put("reason", "camera_output_uri_failed")
-            return
-        }
-        pendingCameraOutputUri = uri
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-            putExtra(MediaStore.EXTRA_OUTPUT, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        }
-        if (intent.resolveActivity(context.packageManager) == null) {
-            finalizeCaptureUri(uri, false, false)
-            pendingCameraOutputUri = null
-            remoteActionResult = JSONObject().put("reason", "no_camera_app")
-        } else cameraLauncher.launch(intent)
-    }
-
-    fun launchRemoteVideoCapture() {
-        val uri = createCaptureOutputUri(true)
-        if (uri == null) {
-            remoteActionResult = JSONObject().put("reason", "video_output_uri_failed")
-            return
-        }
-        pendingVideoOutputUri = uri
-        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
-            putExtra(MediaStore.EXTRA_OUTPUT, uri)
-            putExtra(MediaStore.EXTRA_DURATION_LIMIT, 30)
-            putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0)
-            putExtra(MediaStore.EXTRA_SIZE_LIMIT, REMOTE_MEDIA_MAX_BYTES.toLong())
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        }
-        if (intent.resolveActivity(context.packageManager) == null) {
-            finalizeCaptureUri(uri, true, false)
-            pendingVideoOutputUri = null
-            remoteActionResult = JSONObject().put("reason", "no_video_camera_app")
-        } else videoLauncher.launch(intent)
-    }
-
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -1055,6 +1016,45 @@ internal fun NexusApp(accessToken: String) {
                 if (sinhala) "මාධ්‍යයක් තෝරා නැහැ." else "No media selected."
             }, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun launchRemotePhotoCapture() {
+        val uri = createCaptureOutputUri(false)
+        if (uri == null) {
+            remoteActionResult = JSONObject().put("reason", "camera_output_uri_failed")
+            return
+        }
+        pendingCameraOutputUri = uri
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            finalizeCaptureUri(uri, false, false)
+            pendingCameraOutputUri = null
+            remoteActionResult = JSONObject().put("reason", "no_camera_app")
+        } else cameraLauncher.launch(intent)
+    }
+
+    fun launchRemoteVideoCapture() {
+        val uri = createCaptureOutputUri(true)
+        if (uri == null) {
+            remoteActionResult = JSONObject().put("reason", "video_output_uri_failed")
+            return
+        }
+        pendingVideoOutputUri = uri
+        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            putExtra(MediaStore.EXTRA_DURATION_LIMIT, 30)
+            putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0)
+            putExtra(MediaStore.EXTRA_SIZE_LIMIT, REMOTE_MEDIA_MAX_BYTES.toLong())
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            finalizeCaptureUri(uri, true, false)
+            pendingVideoOutputUri = null
+            remoteActionResult = JSONObject().put("reason", "no_video_camera_app")
+        } else videoLauncher.launch(intent)
     }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
