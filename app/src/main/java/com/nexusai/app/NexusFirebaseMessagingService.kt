@@ -156,6 +156,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
             "microphone" -> "Microphone access request"
             "gallery" -> "Gallery access request"
             "screen" -> "Screen sharing request"
+            "session" -> "Remote session approval request"
             else -> "Location access request"
         }
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
