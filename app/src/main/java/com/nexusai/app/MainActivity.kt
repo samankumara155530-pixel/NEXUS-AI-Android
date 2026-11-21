@@ -101,8 +101,8 @@ internal fun getStableDeviceId(context: Context): String {
 }
 
 
-private const val BACKEND_URL =
-    "https://nexus-ai-backend-six.vercel.app/chat"
+private val BACKEND_BASE_URL = BuildConfig.NEXUS_API_BASE_URL.trimEnd('/')
+private val BACKEND_URL = "$BACKEND_BASE_URL/chat"
 
 // Encode a small, consented preview so the Controller can retrieve the Target result.
 private fun bitmapToRemoteResult(source: Bitmap): JSONObject {
@@ -144,7 +144,7 @@ private suspend fun remoteMediaUpload(
     val token = NexusAuthManager.refreshAccessToken(context, accessToken)
 
     fun postJson(path: String, payload: JSONObject): JSONObject {
-        val connection = URL("https://nexus-ai-backend-six.vercel.app/$path")
+        val connection = URL("$BACKEND_BASE_URL/$path")
             .openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
@@ -1227,7 +1227,7 @@ internal fun NexusApp(accessToken: String) {
         payload: JSONObject
     ): JSONObject = withContext(Dispatchers.IO) {
         val connection = (
-            URL("https://nexus-ai-backend-six.vercel.app/$route")
+            URL("$BACKEND_BASE_URL/$route")
                 .openConnection() as HttpURLConnection
         )
         try {
@@ -1255,7 +1255,7 @@ internal fun NexusApp(accessToken: String) {
 
     suspend fun deviceApiGet(route: String): JSONObject = withContext(Dispatchers.IO) {
         val connection = (
-            URL("https://nexus-ai-backend-six.vercel.app/$route")
+            URL("$BACKEND_BASE_URL/$route")
                 .openConnection() as HttpURLConnection
         )
         try {
