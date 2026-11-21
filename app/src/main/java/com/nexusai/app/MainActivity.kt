@@ -6,6 +6,7 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Looper
+import android.media.projection.MediaProjectionManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -707,6 +708,41 @@ internal fun NexusApp(accessToken: String) {
             }
         } else if (remoteActionRequestId.isNotBlank()) {
             remoteActionResult = JSONObject().put("reason", "user_cancelled")
+        }
+    }
+
+    // TARGET SCREEN SHARE: Android always displays its own capture-consent dialog.
+    val screenCaptureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val requestId = remoteActionRequestId
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null && requestId.isNotBlank()) {
+            try {
+                val serviceIntent = Intent(context, NexusScreenCaptureService::class.java).apply {
+                    putExtra(NexusScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                    putExtra(NexusScreenCaptureService.EXTRA_RESULT_DATA, result.data)
+                    putExtra(NexusScreenCaptureService.EXTRA_REQUEST_ID, requestId)
+                }
+                ContextCompat.startForegroundService(context, serviceIntent)
+                remoteActionRequestId = ""
+                deviceStatusMessage = if (sinhala) "අනුමත කළ තිර දර්ශනය Controller වෙත යවමින්..." else "Sending the approved screen preview to Controller..."
+            } catch (error: Exception) {
+                scope.launch {
+                    runCatching {
+                        NexusFcm.respondRemote(context, requestId, "failed", JSONObject().put("reason", "screen_service_start_failed"))
+                    }
+                }
+                remoteActionRequestId = ""
+                deviceStatusMessage = (error.message ?: "Screen capture could not start").take(140)
+            }
+        } else if (requestId.isNotBlank()) {
+            scope.launch {
+                runCatching {
+                    NexusFcm.respondRemote(context, requestId, "failed", JSONObject().put("reason", "screen_capture_permission_denied"))
+                }
+            }
+            remoteActionRequestId = ""
+            deviceStatusMessage = if (sinhala) "තිරය බෙදාගැනීමේ අවසරය ලබා දුන්නේ නැහැ." else "Screen sharing permission was not granted."
         }
     }
 
@@ -2605,7 +2641,8 @@ internal fun NexusApp(accessToken: String) {
                                     Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
                                     Triple(Icons.Default.Mic, if (sinhala) "මයික්" else "Microphone", "microphone"),
                                     Triple(Icons.Default.PhotoLibrary, if (sinhala) "ගැලරිය" else "Gallery", "gallery"),
-                                    Triple(Icons.Default.LocationOn, if (sinhala) "ස්ථානය" else "Location", "location")
+                                    Triple(Icons.Default.LocationOn, if (sinhala) "ස්ථානය" else "Location", "location"),
+                                    Triple(Icons.Default.Cast, if (sinhala) "තිරය" else "Screen", "screen")
                                 )
                                 remoteFeatures.chunked(2).forEach { rowFeatures ->
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2643,6 +2680,7 @@ internal fun NexusApp(accessToken: String) {
                                                                             result.has("latitude") -> "Location: ${result.optDouble("latitude")}, ${result.optDouble("longitude")}"
                                                                             result.optString("cameraResult") == "captured" -> "Camera preview received from Target."
                                                                             result.optString("gallerySelection") == "selected" -> "Gallery preview received from Target."
+                                                                            result.optString("screenCapture") == "one_time_preview" -> "Consent-approved Target screen preview received."
                                                                             else -> "Target action completed."
                                                                         }
                                                                         deviceStatusMessage = if (sinhala) "${feature.second} ප්‍රතිඵලය Target වෙතින් ලැබුණා." else "${feature.second} result received from Target."
@@ -2689,7 +2727,7 @@ internal fun NexusApp(accessToken: String) {
                                     }
                                 }
                                 Text(
-                                    if (sinhala) "මෙය සම්බන්ධ කළ උපාංග ලැයිස්තුවයි. Remote Screen පාලනය තවම සක්‍රිය කර නැත." else "This is your paired-device list. Remote screen control is not enabled yet.",
+                                    if (sinhala) "Screen බොත්තමෙන් Target පරිශීලකයාගේ අවසරය ලබාගෙන එක් තිර දර්ශනයක් ලබාගත හැක. සජීවී වීඩියෝ සහ touch control තවම නැත." else "Screen requests one consent-approved Target screen preview. Live video streaming and remote touch control are not implemented yet.",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary
                                 )
@@ -3222,6 +3260,7 @@ internal fun NexusApp(accessToken: String) {
                 "microphone" -> if (sinhala) "මයික්‍රෆෝනය" else "Microphone"
                 "gallery" -> if (sinhala) "Gallery" else "Gallery"
                 "location" -> if (sinhala) "ස්ථානය" else "Location"
+                "screen" -> if (sinhala) "තිරය" else "Screen"
                 else -> pendingRemoteFeature
             }
             AlertDialog(
@@ -3258,6 +3297,10 @@ internal fun NexusApp(accessToken: String) {
                                             putExtra(RecognizerIntent.EXTRA_PROMPT, if (sinhala) "NEXUS සඳහා ඔබේ හඬ පණිවිඩය කියන්න" else "Speak your NEXUS voice message")
                                         }
                                     )
+                                    "screen" -> {
+                                        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                                        screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
+                                    }
                                     "location" -> {
                                         locationPermissionLauncher.launch(
                                             arrayOf(
