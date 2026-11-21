@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.*
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.net.Uri
 import android.os.Looper
 import android.media.projection.MediaProjectionManager
 import android.location.Location
@@ -123,6 +124,122 @@ private fun bitmapToRemoteResult(source: Bitmap): JSONObject {
         .put("imageMimeType", "image/jpeg")
         .put("imageJpegBase64", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP))
         .put("imageBytes", output.size())
+}
+
+private const val REMOTE_MEDIA_MAX_BYTES = 20 * 1024 * 1024
+
+private suspend fun remoteMediaUpload(
+    context: Context,
+    accessToken: String,
+    deviceId: String,
+    requestId: String,
+    mimeType: String,
+    fileName: String,
+    bytes: ByteArray
+): JSONObject = withContext(Dispatchers.IO) {
+    require(bytes.isNotEmpty()) { "Empty media file" }
+    require(bytes.size <= REMOTE_MEDIA_MAX_BYTES) { "Media file exceeds 20 MB limit" }
+    val token = NexusAuthManager.refreshAccessToken(context, accessToken)
+
+    fun postJson(path: String, payload: JSONObject): JSONObject {
+        val connection = URL("https://nexus-ai-backend-six.vercel.app/$path")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 30000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use {
+                it.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = JSONObject(body.ifBlank { "{}" })
+            if (status !in 200..299) {
+                throw IllegalStateException(json.optString("error", "Media API HTTP $status"))
+            }
+            json
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    val upload = postJson(
+        "devices/remote/media/upload-url",
+        JSONObject()
+            .put("deviceId", deviceId)
+            .put("requestId", requestId)
+            .put("mimeType", mimeType)
+            .put("fileName", fileName)
+    )
+    val signedUrl = upload.optString("signedUrl")
+    require(signedUrl.startsWith("https://")) { "Invalid secure upload URL" }
+
+    val storageConnection = URL(signedUrl).openConnection() as HttpURLConnection
+    try {
+        storageConnection.requestMethod = "PUT"
+        storageConnection.connectTimeout = 20000
+        storageConnection.readTimeout = 90000
+        storageConnection.doOutput = true
+        storageConnection.setRequestProperty("Content-Type", mimeType)
+        storageConnection.setFixedLengthStreamingMode(bytes.size)
+        storageConnection.outputStream.use { it.write(bytes) }
+        val status = storageConnection.responseCode
+        if (status !in 200..299) {
+            val errorBody = storageConnection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            throw IllegalStateException("Secure media upload failed (HTTP $status): ${errorBody.take(160)}")
+        }
+    } finally {
+        storageConnection.disconnect()
+    }
+
+    postJson(
+        "devices/remote/media/complete",
+        JSONObject()
+            .put("deviceId", deviceId)
+            .put("requestId", requestId)
+            .put("sizeBytes", bytes.size)
+    )
+}
+
+private fun readRemoteMediaBytes(
+    context: Context,
+    uri: Uri,
+    mimeType: String
+): ByteArray {
+    val resolver = context.contentResolver
+    if (mimeType.startsWith("image/")) {
+        val source = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+            ?: throw IllegalStateException("Could not read selected image")
+        val ratio = minOf(1f, 1920f / maxOf(source.width, source.height).toFloat())
+        val scaled = if (ratio < 1f) Bitmap.createScaledBitmap(
+            source,
+            (source.width * ratio).toInt().coerceAtLeast(1),
+            (source.height * ratio).toInt().coerceAtLeast(1),
+            true
+        ) else source
+        val output = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 88, output)
+        if (scaled !== source) scaled.recycle()
+        source.recycle()
+        return output.toByteArray()
+    }
+    return resolver.openInputStream(uri)?.use { input ->
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        var total = 0
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            require(total <= REMOTE_MEDIA_MAX_BYTES) { "Media file exceeds 20 MB limit" }
+            output.write(buffer, 0, count)
+        }
+        output.toByteArray()
+    } ?: throw IllegalStateException("Could not read selected media")
 }
 
 // MAIN ACTIVITY
