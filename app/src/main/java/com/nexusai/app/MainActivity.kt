@@ -2665,22 +2665,30 @@ internal fun NexusApp(accessToken: String) {
                                                                 )
                                                                 val requestId = sent.optString("requestId")
                                                                 var status = "pending"
-                                                                for (attempt in 0 until 30) {
+                                                                for (attempt in 0 until if (feature.third == "screen") 40 else 30) {
                                                                     kotlinx.coroutines.delay(2000)
                                                                     val update = deviceApiGet(
                                                                         "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
                                                                     )
                                                                     val request = update.optJSONObject("request")
                                                                     status = request?.optString("status", "pending") ?: "pending"
+                                                                    val liveResult = request?.optJSONObject("result") ?: JSONObject()
+                                                                    if (feature.third == "screen" && liveResult.optString("screenCapture") == "live_frame") {
+                                                                        val frame = liveResult.optString("imageJpegBase64", "")
+                                                                        if (frame.isNotBlank()) {
+                                                                            remoteResultImageBase64 = frame
+                                                                            remoteResultMessage = if (sinhala) "Target තිරය සජීවීව ලැබෙමින් පවතී…" else "Live screen preview updating from Target…"
+                                                                        }
+                                                                    }
                                                                     if (status == "completed") {
-                                                                        val result = request?.optJSONObject("result") ?: JSONObject()
-                                                                        remoteResultImageBase64 = result.optString("imageJpegBase64", "")
+                                                                        val result = liveResult
+                                                                        remoteResultImageBase64 = result.optString("imageJpegBase64", remoteResultImageBase64)
                                                                         remoteResultMessage = when {
                                                                             result.has("transcript") -> result.optString("transcript")
                                                                             result.has("latitude") -> "Location: ${result.optDouble("latitude")}, ${result.optDouble("longitude")}"
                                                                             result.optString("cameraResult") == "captured" -> "Camera preview received from Target."
                                                                             result.optString("gallerySelection") == "selected" -> "Gallery preview received from Target."
-                                                                            result.optString("screenCapture") == "one_time_preview" -> "Consent-approved Target screen preview received."
+                                                                            result.has("screenCapture") -> if (sinhala) "Target තිරය බෙදාගැනීම අවසන්. අවසන් දර්ශනය මෙහි ඇත." else "Target screen sharing ended. Latest frame is shown."
                                                                             else -> "Target action completed."
                                                                         }
                                                                         deviceStatusMessage = if (sinhala) "${feature.second} ප්‍රතිඵලය Target වෙතින් ලැබුණා." else "${feature.second} result received from Target."
