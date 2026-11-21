@@ -10,6 +10,19 @@ android {
     namespace = "com.nexusai.app"
     compileSdk = 35
 
+    flavorDimensions += "deviceRole"
+
+    productFlavors {
+        create("controller") {
+            dimension = "deviceRole"
+            buildConfigField("String", "DEVICE_ROLE", "\"controller\"")
+        }
+        create("target") {
+            dimension = "deviceRole"
+            buildConfigField("String", "DEVICE_ROLE", "\"target\"")
+        }
+    }
+
     defaultConfig {
         applicationId = "com.nexusai.app"
         minSdk = 26
@@ -52,6 +65,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
