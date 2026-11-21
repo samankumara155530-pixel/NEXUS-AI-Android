@@ -5,6 +5,13 @@ import android.Manifest
 import android.content.*
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Looper
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
 import android.speech.RecognizerIntent
 import android.provider.MediaStore
 import android.provider.CalendarContract
@@ -673,10 +680,12 @@ internal fun NexusApp(accessToken: String) {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (remoteActionRequestId.isNotBlank()) {
-            remoteActionResult = JSONObject().put(
-                "cameraResult",
-                if (result.resultCode == ComponentActivity.RESULT_OK) "captured" else "cancelled"
-            )
+            val bitmap = result.data?.extras?.get("data") as? Bitmap
+            remoteActionResult = if (result.resultCode == ComponentActivity.RESULT_OK && bitmap != null) {
+                bitmapToRemoteResult(bitmap).put("cameraResult", "captured")
+            } else {
+                JSONObject().put("cameraResult", "cancelled_or_no_thumbnail")
+            }
         } else {
             Toast.makeText(
                 context,
@@ -690,10 +699,19 @@ internal fun NexusApp(accessToken: String) {
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (remoteActionRequestId.isNotBlank()) {
-            remoteActionResult = JSONObject().put(
-                "gallerySelection",
-                if (uri != null) "selected" else "cancelled"
-            )
+            remoteActionResult = if (uri != null) {
+                try {
+                    val bitmap = context.contentResolver.openInputStream(uri)?.use {
+                        BitmapFactory.decodeStream(it)
+                    }
+                    if (bitmap != null) bitmapToRemoteResult(bitmap).put("gallerySelection", "selected")
+                    else JSONObject().put("gallerySelection", "selected_but_unreadable")
+                } catch (error: Exception) {
+                    JSONObject().put("gallerySelection", "read_failed").put("reason", error.message ?: "unknown")
+                }
+            } else {
+                JSONObject().put("gallerySelection", "cancelled")
+            }
         } else {
             Toast.makeText(
                 context,
@@ -704,6 +722,47 @@ internal fun NexusApp(accessToken: String) {
                 },
                 Toast.LENGTH_SHORT
             ).show()
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val provider = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+            if (provider == null) {
+                remoteActionResult = JSONObject().put("reason", "location_provider_disabled")
+            } else {
+                try {
+                    val listener = object : LocationListener {
+                        override fun onLocationChanged(location: Location) {
+                            runCatching { manager.removeUpdates(this) }
+                            remoteActionResult = JSONObject()
+                                .put("latitude", location.latitude)
+                                .put("longitude", location.longitude)
+                                .put("accuracyMeters", location.accuracy.toDouble())
+                                .put("capturedAt", location.time)
+                        }
+                        @Deprecated("Deprecated in Android")
+                        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                        override fun onProviderEnabled(provider: String) {}
+                        override fun onProviderDisabled(provider: String) {
+                            remoteActionResult = JSONObject().put("reason", "location_provider_disabled")
+                        }
+                    }
+                    manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+                } catch (error: SecurityException) {
+                    remoteActionResult = JSONObject().put("reason", "location_permission_denied")
+                } catch (error: Exception) {
+                    remoteActionResult = JSONObject().put("reason", error.message ?: "location_failed")
+                }
+            }
+        } else {
+            remoteActionResult = JSONObject().put("reason", "location_permission_denied")
         }
     }
 
@@ -3135,17 +3194,12 @@ internal fun NexusApp(accessToken: String) {
                                         }
                                     )
                                     "location" -> {
-                                        deviceApiPost(
-                                            "devices/remote/respond",
-                                            JSONObject()
-                                                .put("deviceId", getStableDeviceId(context))
-                                                .put("requestId", requestId)
-                                                .put("status", "failed")
-                                                .put("result", JSONObject().put("reason", "location_provider_not_yet_connected"))
+                                        locationPermissionLauncher.launch(
+                                            arrayOf(
+                                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                                Manifest.permission.ACCESS_COARSE_LOCATION
+                                            )
                                         )
-                                        remoteActionRequestId = ""
-                                        remoteActionResult = null
-                                        deviceStatusMessage = if (sinhala) "Location සඳහා GPS අවසර සහ Location Provider සම්බන්ධ කිරීම තවම අවශ්‍යයි." else "Location provider and runtime permission wiring is still required."
                                     }
                                 }
                                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
