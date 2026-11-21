@@ -717,7 +717,7 @@ internal fun NexusApp(accessToken: String) {
     ) { result ->
         if (remoteActionRequestId.isNotBlank()) {
             val bitmap = result.data?.extras?.get("data") as? Bitmap
-            remoteActionResult = if (result.resultCode == ComponentActivity.RESULT_OK && bitmap != null) {
+            remoteActionResult = if (result.resultCode == android.app.Activity.RESULT_OK && bitmap != null) {
                 bitmapToRemoteResult(bitmap).put("cameraResult", "captured")
             } else {
                 JSONObject().put("cameraResult", "cancelled_or_no_thumbnail")
