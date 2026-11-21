@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.*
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
 import android.net.Uri
 import android.os.Looper
 import android.media.projection.MediaProjectionManager
@@ -714,6 +715,9 @@ internal fun NexusApp(accessToken: String) {
     }
     var remoteActionRequestId by remember { mutableStateOf("") }
     var remoteActionResult by remember { mutableStateOf<JSONObject?>(null) }
+    var pendingCameraOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingVideoOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var showCameraModeDialog by remember { mutableStateOf(false) }
     var remoteResultImageBase64 by remember { mutableStateOf("") }
     var remoteResultMessage by remember { mutableStateOf("") }
     val remoteResultPreviewBitmap = remember(remoteResultImageBase64) {
@@ -883,54 +887,173 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
-    // CAMERA
+    // CONSENTED CAMERA / VIDEO CAPTURE
+
+    fun createCaptureOutputUri(video: Boolean): Uri? {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "nexus_${System.currentTimeMillis()}.${if (video) "mp4" else "jpg"}")
+            put(MediaStore.MediaColumns.MIME_TYPE, if (video) "video/mp4" else "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, if (video) "Movies/NEXUS AI" else "Pictures/NEXUS AI")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+        return context.contentResolver.insert(
+            if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            values
+        )
+    }
+
+    fun finalizeCaptureUri(uri: Uri?, video: Boolean, keep: Boolean) {
+        if (uri == null) return
+        if (keep && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            runCatching { context.contentResolver.update(uri, values, null, null) }
+        } else if (!keep) {
+            runCatching { context.contentResolver.delete(uri, null, null) }
+        }
+    }
+
+    fun launchRemotePhotoCapture() {
+        val uri = createCaptureOutputUri(false)
+        if (uri == null) {
+            remoteActionResult = JSONObject().put("reason", "camera_output_uri_failed")
+            return
+        }
+        pendingCameraOutputUri = uri
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            finalizeCaptureUri(uri, false, false)
+            pendingCameraOutputUri = null
+            remoteActionResult = JSONObject().put("reason", "no_camera_app")
+        } else cameraLauncher.launch(intent)
+    }
+
+    fun launchRemoteVideoCapture() {
+        val uri = createCaptureOutputUri(true)
+        if (uri == null) {
+            remoteActionResult = JSONObject().put("reason", "video_output_uri_failed")
+            return
+        }
+        pendingVideoOutputUri = uri
+        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            putExtra(MediaStore.EXTRA_DURATION_LIMIT, 30)
+            putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0)
+            putExtra(MediaStore.EXTRA_SIZE_LIMIT, REMOTE_MEDIA_MAX_BYTES.toLong())
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            finalizeCaptureUri(uri, true, false)
+            pendingVideoOutputUri = null
+            remoteActionResult = JSONObject().put("reason", "no_video_camera_app")
+        } else videoLauncher.launch(intent)
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (remoteActionRequestId.isNotBlank()) {
-            val bitmap = result.data?.extras?.get("data") as? Bitmap
-            remoteActionResult = if (result.resultCode == android.app.Activity.RESULT_OK && bitmap != null) {
-                bitmapToRemoteResult(bitmap).put("cameraResult", "captured")
+        val requestId = remoteActionRequestId
+        val uri = pendingCameraOutputUri
+        pendingCameraOutputUri = null
+        if (requestId.isNotBlank()) {
+            if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) {
+                finalizeCaptureUri(uri, false, true)
+                scope.launch {
+                    try {
+                        val bytes = readRemoteMediaBytes(context, uri, "image/jpeg")
+                        remoteMediaUpload(context, accessToken, getStableDeviceId(context), requestId,
+                            "image/jpeg", "camera_photo.jpg", bytes)
+                        remoteActionRequestId = ""
+                        remoteActionResult = null
+                        deviceStatusMessage = if (sinhala) "ඡායාරූපය Controller වෙත ආරක්ෂිතව යැව්වා." else "Photo securely sent to Controller."
+                    } catch (error: Exception) {
+                        remoteActionResult = JSONObject().put("reason", error.message ?: "camera_photo_upload_failed")
+                    }
+                }
             } else {
-                JSONObject().put("cameraResult", "cancelled_or_no_thumbnail")
+                finalizeCaptureUri(uri, false, false)
+                remoteActionResult = JSONObject().put("reason", "camera_photo_cancelled_or_missing")
             }
         } else {
-            Toast.makeText(
-                context,
-                if (sinhala) "Camera වෙතින් ආපසු පැමිණියා." else "Returned from Camera.",
-                Toast.LENGTH_SHORT
-            ).show()
+            Toast.makeText(context, if (sinhala) "Camera වෙතින් ආපසු පැමිණියා." else "Returned from Camera.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val videoLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val requestId = remoteActionRequestId
+        val outputUri = pendingVideoOutputUri
+        val uri = if (outputUri != null && runCatching {
+            context.contentResolver.openFileDescriptor(outputUri, "r")?.use { it.statSize > 0 } == true
+        }.getOrDefault(false)) outputUri else result.data?.data ?: outputUri
+        pendingVideoOutputUri = null
+        if (requestId.isNotBlank()) {
+            if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) {
+                finalizeCaptureUri(uri, true, true)
+                scope.launch {
+                    try {
+                        val mime = context.contentResolver.getType(uri) ?: "video/mp4"
+                        val safeMime = if (mime in setOf("video/mp4", "video/3gpp", "video/webm")) mime else "video/mp4"
+                        val bytes = readRemoteMediaBytes(context, uri, safeMime)
+                        remoteMediaUpload(context, accessToken, getStableDeviceId(context), requestId,
+                            safeMime, "camera_video.${if (safeMime == "video/3gpp") "3gp" else if (safeMime == "video/webm") "webm" else "mp4"}", bytes)
+                        remoteActionRequestId = ""
+                        remoteActionResult = null
+                        deviceStatusMessage = if (sinhala) "ශබ්දය සමඟ වීඩියෝව Controller වෙත ආරක්ෂිතව යැව්වා." else "Video with audio securely sent to Controller."
+                    } catch (error: Exception) {
+                        remoteActionResult = JSONObject().put("reason", error.message ?: "camera_video_upload_failed")
+                    }
+                }
+            } else {
+                finalizeCaptureUri(outputUri, true, false)
+                remoteActionResult = JSONObject().put("reason", "camera_video_cancelled_or_missing")
+            }
         }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (remoteActionRequestId.isNotBlank()) {
-            remoteActionResult = if (uri != null) {
-                try {
-                    val bitmap = context.contentResolver.openInputStream(uri)?.use {
-                        BitmapFactory.decodeStream(it)
+            if (uri != null) {
+                scope.launch {
+                    try {
+                        runCatching {
+                            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val mime = context.contentResolver.getType(uri)?.lowercase()
+                            ?: throw IllegalStateException("Could not detect selected media type")
+                        val supported = mime in setOf(
+                            "image/jpeg", "image/png", "image/webp",
+                            "video/mp4", "video/3gpp", "video/webm"
+                        )
+                        require(supported) { "Choose a JPG, PNG, WebP photo or MP4/3GP/WebM video" }
+                        val uploadMime = if (mime.startsWith("image/")) "image/jpeg" else mime
+                        val bytes = readRemoteMediaBytes(context, uri, uploadMime)
+                        remoteMediaUpload(context, accessToken, getStableDeviceId(context),
+                            remoteActionRequestId, uploadMime, "gallery_media", bytes)
+                        remoteActionRequestId = ""
+                        remoteActionResult = null
+                        deviceStatusMessage = if (sinhala) "Gallery මාධ්‍යය Controller වෙත ආරක්ෂිතව යැව්වා." else "Gallery media securely sent to Controller."
+                    } catch (error: Exception) {
+                        remoteActionResult = JSONObject().put("reason", error.message ?: "gallery_upload_failed")
                     }
-                    if (bitmap != null) bitmapToRemoteResult(bitmap).put("gallerySelection", "selected")
-                    else JSONObject().put("gallerySelection", "selected_but_unreadable")
-                } catch (error: Exception) {
-                    JSONObject().put("gallerySelection", "read_failed").put("reason", error.message ?: "unknown")
                 }
             } else {
-                JSONObject().put("gallerySelection", "cancelled")
+                remoteActionResult = JSONObject().put("reason", "gallery_selection_cancelled")
             }
         } else {
-            Toast.makeText(
-                context,
-                if (uri != null) {
-                    if (sinhala) "Gallery ඡායාරූපය තෝරාගත්තා." else "Image selected from Gallery."
-                } else {
-                    if (sinhala) "ඡායාරූපයක් තෝරා නැහැ." else "No image selected."
-                },
-                Toast.LENGTH_SHORT
-            ).show()
+            Toast.makeText(context, if (uri != null) {
+                if (sinhala) "Gallery මාධ්‍යය තෝරාගත්තා." else "Media selected from Gallery."
+            } else {
+                if (sinhala) "මාධ්‍යයක් තෝරා නැහැ." else "No media selected."
+            }, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1006,8 +1129,8 @@ internal fun NexusApp(accessToken: String) {
 
         try {
             when (feature) {
-                "camera" -> cameraLauncher.launch(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
-                "gallery" -> galleryLauncher.launch("image/*")
+                "camera" -> showCameraModeDialog = true
+                "gallery" -> galleryLauncher.launch(arrayOf("image/*", "video/*"))
                 "microphone" -> voiceLauncher.launch(
                     Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -2873,7 +2996,7 @@ internal fun NexusApp(accessToken: String) {
                                                                 )
                                                                 val requestId = sent.optString("requestId")
                                                                 var status = "pending"
-                                                                for (attempt in 0 until (if (feature.third == "screen") 40 else 30)) {
+                                                                for (attempt in 0 until (if (feature.third == "screen") 40 else 90)) {
                                                                     kotlinx.coroutines.delay(2000)
                                                                     val update = deviceApiGet(
                                                                         "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
@@ -3583,8 +3706,8 @@ internal fun NexusApp(accessToken: String) {
                                         .apply()
                                     deviceStatusMessage = if (sinhala) "Remote Session එක විනාඩි 30කට සක්‍රිය කළා." else "Remote session enabled for 30 minutes."
                                 } else when (feature) {
-                                    "camera" -> cameraLauncher.launch(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
-                                    "gallery" -> galleryLauncher.launch("image/*")
+                                    "camera" -> showCameraModeDialog = true
+                                    "gallery" -> galleryLauncher.launch(arrayOf("image/*", "video/*"))
                                     "microphone" -> voiceLauncher.launch(
                                         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
