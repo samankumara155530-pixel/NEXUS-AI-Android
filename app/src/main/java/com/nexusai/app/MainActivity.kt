@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -2316,6 +2317,10 @@ internal fun NexusApp(accessToken: String) {
                                         }
                                         .values
                                         .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
+                                    val currentDeviceId = getStableDeviceId(context)
+                                    val currentDeviceRole = uniqueDevices.firstOrNull { item ->
+                                        item.optString("device_id").equals(currentDeviceId, ignoreCase = true)
+                                    }?.optString("device_role").orEmpty()
                                     uniqueDevices.forEach { device ->
                                         val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
                                         val targetDeviceId = device.optString("device_id").ifBlank {
@@ -2353,24 +2358,45 @@ internal fun NexusApp(accessToken: String) {
                                                     null,
                                                     tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779)
                                                 )
-                                                if (!revoked && !isThisPhone && targetDeviceId.isNotBlank()) {
+                                                if (!revoked && currentDeviceRole == "controller" && device.optString("device_role") == "target" && !isThisPhone && targetDeviceId.isNotBlank()) {
                                                     TextButton(
                                                         enabled = !deviceRequestBusy,
                                                         onClick = {
                                                             scope.launch {
                                                                 deviceRequestBusy = true
                                                                 try {
-                                                                    deviceApiPost(
+                                                                    val wakeResponse = deviceApiPost(
                                                                         "devices/$targetDeviceId/push/wake",
                                                                         JSONObject().put(
                                                                             "controllerDeviceId",
-                                                                            getStableDeviceId(context)
+                                                                            currentDeviceId
                                                                         )
                                                                     )
+                                                                    val requestId = wakeResponse.optString("requestId")
+                                                                    if (requestId.isBlank()) {
+                                                                        throw IllegalStateException("FCM accepted the request but did not return a delivery tracking ID.")
+                                                                    }
                                                                     deviceStatusMessage = if (sinhala)
-                                                                        "Wake පණිවිඩය FCM වෙත සාර්ථකව යැව්වා."
+                                                                        "FCM වෙත යැවුණා. Target දුරකථනයෙන් ලැබුණු බව බලාපොරොත්තු වෙමින්..."
                                                                     else
-                                                                        "Wake request accepted by FCM."
+                                                                        "Sent to FCM. Waiting for target phone receipt..."
+                                                                    var finalStatus = "sent"
+                                                                    repeat(8) {
+                                                                        delay(1500)
+                                                                        val statusResponse = deviceApiGet(
+                                                                            "devices/$targetDeviceId/push/status?controllerDeviceId=$currentDeviceId&requestId=$requestId"
+                                                                        )
+                                                                        finalStatus = statusResponse.optJSONObject("delivery")?.optString("status").orEmpty()
+                                                                        if (finalStatus == "received" || finalStatus == "processed" || finalStatus == "failed") {
+                                                                            return@repeat
+                                                                        }
+                                                                    }
+                                                                    deviceStatusMessage = when (finalStatus) {
+                                                                        "processed" -> if (sinhala) "සාර්ථකයි: Target දුරකථනයට පණිවිඩය ලැබී Presence Sync ක්‍රියාත්මක කළා." else "Success: target received the message and completed presence sync."
+                                                                        "received" -> if (sinhala) "Target දුරකථනයට පණිවිඩය ලැබුණා. Presence Sync තවම ක්‍රියාත්මක වෙමින් පවතී." else "Target received the message. Presence sync is still running."
+                                                                        "failed" -> if (sinhala) "Target පණිවිඩය සැකසීම අසාර්ථකයි." else "Target failed to process the wake message."
+                                                                        else -> if (sinhala) "FCM වෙත යැවුණා. Target එකෙන් ලැබුණු තහවුරු කිරීම තවම නැහැ. පසුව Refresh කර බලන්න." else "FCM accepted the message; target receipt is not confirmed yet. Refresh and check again."
+                                                                    }
                                                                 } catch (e: Exception) {
                                                                     val error = e.message.orEmpty()
                                                                     deviceStatusMessage = when {
