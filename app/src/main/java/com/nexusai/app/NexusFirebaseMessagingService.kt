@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -61,8 +62,7 @@ internal object NexusFcm {
 
     suspend fun registerCurrentInstallation(context: android.content.Context) {
         val token = withContext(Dispatchers.IO) {
-            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-                .get()
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
         }
         registerToken(context, token)
     }
