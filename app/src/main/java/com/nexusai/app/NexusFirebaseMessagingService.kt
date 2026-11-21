@@ -48,13 +48,14 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
         super.onMessageReceived(message)
         if (BuildConfig.NEXUS_DEVICE_ROLE != "target") return
 
-        val data = message.data
+        val data: Map<String, String> = message.data
         val requestId = data["requestId"].orEmpty()
         if (requestId.isBlank()) return
 
         if (data["type"] == "NEXUS_REMOTE_REQUEST" && data["action"] == "REQUEST_APPROVAL") {
-            val feature = data["feature"].orEmpty()
-            if (feature !in setOf("camera", "microphone", "gallery", "location")) return
+            val feature: String = data.get("feature") ?: return
+            val allowedFeatures: Set<String> = setOf("camera", "microphone", "gallery", "location")
+            if (feature !in allowedFeatures) return
             getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE).edit()
                 .putString("pending_remote_request_id", requestId)
                 .putString("pending_remote_feature", feature)
