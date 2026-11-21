@@ -26,6 +26,7 @@ class NexusAudioRecordService : Service() {
     companion object {
         const val ACTION_START = "com.nexusai.app.action.START_REMOTE_AUDIO"
         const val ACTION_STOP = "com.nexusai.app.action.STOP_REMOTE_AUDIO"
+        const val ACTION_CANCEL = "com.nexusai.app.action.CANCEL_REMOTE_AUDIO"
         const val EXTRA_REQUEST_ID = "remote_audio_request_id"
         private const val CHANNEL_ID = "nexus_remote_audio_channel"
         private const val NOTIFICATION_ID = 1003
@@ -47,6 +48,11 @@ class NexusAudioRecordService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 finishRecording("stopped_by_user")
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_CANCEL -> {
+                cancelRecording()
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -177,6 +183,29 @@ class NexusAudioRecordService : Service() {
                 .remove("remote_audio_active_request_id")
                 .apply()
         }
+    }
+
+    private fun cancelRecording() {
+        handler.removeCallbacksAndMessages(null)
+        val active = recorder
+        recorder = null
+        if (recording && active != null) {
+            runCatching { active.stop() }
+        }
+        recording = false
+        runCatching { active?.reset() }
+        runCatching { active?.release() }
+        outputFile?.delete()
+        outputFile = null
+        getSharedPreferences("nexus_local_data", MODE_PRIVATE).edit()
+            .remove("remote_audio_active_request_id")
+            .remove("remote_audio_result_request_id")
+            .remove("remote_audio_result_path")
+            .remove("remote_audio_result_size")
+            .remove("remote_audio_result_mime")
+            .remove("remote_audio_result_error")
+            .remove("remote_audio_result_reason")
+            .apply()
     }
 
     private fun saveFailure(reason: String) {
