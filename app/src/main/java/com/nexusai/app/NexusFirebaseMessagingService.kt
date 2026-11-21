@@ -36,6 +36,9 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 
         serviceScope.launch {
             try {
+                postAuthenticated("/devices/push/ack",
+                    JSONObject().put("deviceId", deviceId)
+                        .put("requestId", requestId).put("stage", "received"))
                 val work = OneTimeWorkRequestBuilder<NexusPresenceWorker>()
                     .setInputData(Data.Builder()
                         .putString(NexusPresenceWorker.KEY_REQUEST_ID, requestId).build())
@@ -44,9 +47,6 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
                 WorkManager.getInstance(applicationContext).enqueueUniqueWork(
                     "nexus-presence-$requestId", ExistingWorkPolicy.KEEP, work
                 )
-                postAuthenticated("/devices/push/ack",
-                    JSONObject().put("deviceId", deviceId)
-                        .put("requestId", requestId).put("stage", "received"))
             } catch (error: Exception) {
                 Log.e(TAG, "Could not queue or acknowledge NEXUS wake request", error)
             }
