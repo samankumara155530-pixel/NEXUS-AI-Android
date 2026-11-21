@@ -1,4 +1,9 @@
 
+val nexusApiBaseUrl = providers.environmentVariable("NEXUS_API_BASE_URL")
+    .orElse("https://nexus-ai-backend-six.vercel.app")
+    .get()
+    .trimEnd('/')
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -36,6 +41,7 @@ android {
         // Increase versionCode for every installable update.
         versionCode = 16
         versionName = "1.6.0"
+        buildConfigField("String", "NEXUS_API_BASE_URL", "\"$nexusApiBaseUrl\"")
     }
 
     signingConfigs {
