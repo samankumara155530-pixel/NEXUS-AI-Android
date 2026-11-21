@@ -136,6 +136,18 @@ class MainActivity : ComponentActivity() {
             NexusRoot()
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("target_ui_foreground", true).apply()
+    }
+
+    override fun onPause() {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("target_ui_foreground", false).apply()
+        super.onPause()
+    }
 }
 
 // ENCRYPTION
@@ -575,6 +587,14 @@ internal fun NexusApp(accessToken: String) {
     var wakeStatusMessage by remember { mutableStateOf("") }
     var pendingRemoteRequestId by remember { mutableStateOf("") }
     var pendingRemoteFeature by remember { mutableStateOf("") }
+    var remoteSessionRequestId by remember {
+        mutableStateOf(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("remote_session_request_id", "").orEmpty())
+    }
+    var remoteSessionExpiresAt by remember {
+        mutableStateOf(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong("remote_session_expires_at", 0L))
+    }
     var remoteActionRequestId by remember { mutableStateOf("") }
     var remoteActionResult by remember { mutableStateOf<JSONObject?>(null) }
     var remoteResultImageBase64 by remember { mutableStateOf("") }
@@ -835,6 +855,52 @@ internal fun NexusApp(accessToken: String) {
             }
         } else {
             remoteActionResult = JSONObject().put("reason", "location_permission_denied")
+        }
+    }
+
+    LaunchedEffect(pendingRemoteRequestId, pendingRemoteFeature, remoteSessionExpiresAt) {
+        if (isControllerBuild || pendingRemoteRequestId.isBlank() ||
+            pendingRemoteFeature == "session" ||
+            remoteSessionExpiresAt <= System.currentTimeMillis()
+        ) return@LaunchedEffect
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val sessionId = prefs.getString("remote_session_request_id", "").orEmpty()
+        val sessionExpiry = prefs.getLong("remote_session_expires_at", 0L)
+        val isForeground = prefs.getBoolean("target_ui_foreground", false)
+        if (sessionId != remoteSessionRequestId || sessionExpiry <= System.currentTimeMillis() || !isForeground) {
+            return@LaunchedEffect
+        }
+
+        val requestId = pendingRemoteRequestId
+        val feature = pendingRemoteFeature
+        remoteActionRequestId = requestId
+        pendingRemoteRequestId = ""
+        pendingRemoteFeature = ""
+        prefs.edit().remove("pending_remote_request_id")
+            .remove("pending_remote_feature").remove("pending_remote_created_at").apply()
+
+        try {
+            when (feature) {
+                "camera" -> cameraLauncher.launch(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
+                "gallery" -> galleryLauncher.launch("image/*")
+                "microphone" -> voiceLauncher.launch(
+                    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (sinhala) "si-LK" else "en-US")
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, if (sinhala) "NEXUS සඳහා ඔබේ හඬ පණිවිඩය කියන්න" else "Speak your NEXUS voice message")
+                    }
+                )
+                "screen" -> {
+                    val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                    screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
+                }
+                "location" -> locationPermissionLauncher.launch(
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                )
+            }
+        } catch (error: Exception) {
+            remoteActionResult = JSONObject().put("reason", error.message ?: "remote_action_launch_failed")
         }
     }
 
@@ -2651,6 +2717,7 @@ internal fun NexusApp(accessToken: String) {
                                 }
                                 Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
                                 val remoteFeatures = listOf(
+                                    Triple(Icons.Default.LockOpen, if (sinhala) "Session අනුමැතිය" else "Approve Session", "session"),
                                     Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
                                     Triple(Icons.Default.Mic, if (sinhala) "මයික්" else "Microphone", "microphone"),
                                     Triple(Icons.Default.PhotoLibrary, if (sinhala) "ගැලරිය" else "Gallery", "gallery"),
@@ -2690,6 +2757,20 @@ internal fun NexusApp(accessToken: String) {
                                                                     val request = update.optJSONObject("request")
                                                                     status = request?.optString("status", "pending") ?: "pending"
                                                                     val liveResult = request?.optJSONObject("result") ?: JSONObject()
+                                                                    if (feature.third == "session" && status == "approved") {
+                                                                        val expiry = request?.optString("expires_at").orEmpty()
+                                                                        deviceStatusMessage = if (sinhala) {
+                                                                            "Target අනුමැතිය ලබා දුන්නා. Remote Session එක විනාඩි 30ක් සක්‍රියයි."
+                                                                        } else {
+                                                                            "Target approved. Remote session is active for 30 minutes."
+                                                                        }
+                                                                        remoteResultMessage = expiry
+                                                                        break
+                                                                    }
+                                                                    if (status == "expired") {
+                                                                        deviceStatusMessage = if (sinhala) "Remote Session එක කල් ඉකුත් වී හෝ නතර කර ඇත." else "Remote session expired or was stopped."
+                                                                        break
+                                                                    }
                                                                     if (feature.third == "screen" && liveResult.optString("screenCapture") == "live_frame") {
                                                                         val frame = liveResult.optString("imageJpegBase64", "")
                                                                         if (frame.isNotBlank()) {
@@ -2998,6 +3079,50 @@ internal fun NexusApp(accessToken: String) {
                                 "NEXUS Settings"
                         )
 
+                        if (!isControllerBuild && remoteSessionExpiresAt > System.currentTimeMillis()) {
+                            Card(
+                                Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                            ) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(if (sinhala) "Remote Session සක්‍රියයි" else "Remote Session Active", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (sinhala) "Controller දුරකථනයට ලබාදුන් අවසරය තවමත් සක්‍රියයි. අවශ්‍ය නම් මෙතැනින් නතර කරන්න."
+                                        else "The approved Controller session is still active. You can stop it here at any time."
+                                    )
+                                    OutlinedButton(
+                                        onClick = {
+                                            scope.launch {
+                                                try {
+                                                    deviceApiPost(
+                                                        "devices/remote/session/stop",
+                                                        JSONObject()
+                                                            .put("deviceId", getStableDeviceId(context))
+                                                            .put("requestId", remoteSessionRequestId)
+                                                    )
+                                                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                                                        .remove("remote_session_request_id")
+                                                        .remove("remote_session_expires_at")
+                                                        .apply()
+                                                    remoteSessionRequestId = ""
+                                                    remoteSessionExpiresAt = 0L
+                                                    deviceStatusMessage = if (sinhala) "Remote Session එක නතර කළා." else "Remote session stopped."
+                                                } catch (error: Exception) {
+                                                    deviceStatusMessage = (error.message ?: "Could not stop session").take(140)
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.StopCircle, null)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (sinhala) "Session නතර කරන්න" else "Stop Session")
+                                    }
+                                }
+                            }
+                        }
+
                         Card(
                             Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(24.dp)
@@ -3279,8 +3404,11 @@ internal fun NexusApp(accessToken: String) {
             }
         }
 
-        if (!isControllerBuild && pendingRemoteRequestId.isNotBlank()) {
+        if (!isControllerBuild && pendingRemoteRequestId.isNotBlank() &&
+            (pendingRemoteFeature == "session" || remoteSessionExpiresAt <= System.currentTimeMillis())
+        ) {
             val featureLabel = when (pendingRemoteFeature) {
+                "session" -> if (sinhala) "විනාඩි 30ක Remote Session" else "30-minute remote session",
                 "camera" -> if (sinhala) "කැමරාව" else "Camera"
                 "microphone" -> if (sinhala) "මයික්‍රෆෝනය" else "Microphone"
                 "gallery" -> if (sinhala) "Gallery" else "Gallery"
@@ -3293,7 +3421,13 @@ internal fun NexusApp(accessToken: String) {
                 title = { Text(if (sinhala) "NEXUS දුරස්ථ ඉල්ලීමක්" else "NEXUS remote request") },
                 text = {
                     Text(
-                        if (sinhala) "Controller දුරකථනයෙන් $featureLabel භාවිත කිරීමට ඉල්ලීමක් ලැබී ඇත. ඔබ අනුමත කළහොත් පමණක් මෙම දුරකථනයේ අදාළ ක්‍රියාව විවෘත වේ." else "The Controller requested access to $featureLabel. Nothing happens unless you approve on this phone."
+                        if (pendingRemoteFeature == "session") {
+                            if (sinhala) "මෙම Controller දුරකථනයට විනාඩි 30ක් Camera, Microphone, Gallery සහ Location ඉල්ලීම් සඳහා නැවත නැවත අනුමැතිය නොගෙන ක්‍රියා කිරීමට අවසර දෙන්නද? Screen Share සඳහා Android පද්ධතියේ අවසරය තවමත් අවශ්‍ය වේ. ඔබට සැකසුම් වෙතින් Session එක ඕනෑම වෙලාවක නතර කළ හැකිය."
+                            else "Allow this Controller to use Camera, Microphone, Gallery and Location for 30 minutes without repeated in-app approvals? Android will still require its own permission for Screen Share. You can stop the session at any time in Settings."
+                        } else {
+                            if (sinhala) "Controller දුරකථනයෙන් $featureLabel භාවිත කිරීමට ඉල්ලීමක් ලැබී ඇත. ඔබ අනුමත කළහොත් පමණක් මෙම දුරකථනයේ අදාළ ක්‍රියාව විවෘත වේ."
+                            else "The Controller requested access to $featureLabel. Nothing happens unless you approve on this phone."
+                        }
                     )
                 },
                 confirmButton = {
@@ -3302,17 +3436,29 @@ internal fun NexusApp(accessToken: String) {
                         val feature = pendingRemoteFeature
                         scope.launch {
                             try {
-                                deviceApiPost(
+                                val approval = deviceApiPost(
                                     "devices/remote/respond",
                                     JSONObject()
                                         .put("deviceId", getStableDeviceId(context))
                                         .put("requestId", requestId)
                                         .put("status", "approved")
                                 )
-                                remoteActionRequestId = requestId
+                                remoteActionRequestId = if (feature == "session") "" else requestId
                                 pendingRemoteRequestId = ""
                                 pendingRemoteFeature = ""
-                                when (feature) {
+                                if (feature == "session") {
+                                    val expiryText = approval.optJSONObject("request")?.optString("expires_at").orEmpty()
+                                    val expiry = runCatching {
+                                        java.time.Instant.parse(expiryText).toEpochMilli()
+                                    }.getOrDefault(System.currentTimeMillis() + 30 * 60_000L)
+                                    remoteSessionRequestId = requestId
+                                    remoteSessionExpiresAt = expiry
+                                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                                        .putString("remote_session_request_id", requestId)
+                                        .putLong("remote_session_expires_at", expiry)
+                                        .apply()
+                                    deviceStatusMessage = if (sinhala) "Remote Session එක විනාඩි 30කට සක්‍රිය කළා." else "Remote session enabled for 30 minutes."
+                                } else when (feature) {
                                     "camera" -> cameraLauncher.launch(Intent(MediaStore.ACTION_IMAGE_CAPTURE))
                                     "gallery" -> galleryLauncher.launch("image/*")
                                     "microphone" -> voiceLauncher.launch(
