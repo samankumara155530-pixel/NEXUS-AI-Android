@@ -205,7 +205,7 @@ class NexusScreenCaptureService : Service() {
         } while (output.size() > 42_000 && quality >= 20)
         if (scaled !== source) scaled.recycle()
         source.recycle()
-        if (output.size() > 48_000) throw IllegalStateException("SCREEN_PREVIEW_TOO_LARGE")
+        if (output.size() > 42_000) throw IllegalStateException("SCREEN_PREVIEW_TOO_LARGE")
         return JSONObject()
             .put("imageMimeType", "image/jpeg")
             .put("imageJpegBase64", android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP))
