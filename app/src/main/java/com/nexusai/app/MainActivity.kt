@@ -731,6 +731,7 @@ internal fun NexusApp(accessToken: String) {
     var showCameraModeDialog by remember { mutableStateOf(false) }
     var remoteResultImageBase64 by remember { mutableStateOf("") }
     var remoteResultMediaUrl by remember { mutableStateOf("") }
+    var remoteResultRequestId by remember { mutableStateOf("") }
     var remoteResultMediaType by remember { mutableStateOf("") }
     var remoteResultMimeType by remember { mutableStateOf("") }
     var remoteResultMessage by remember { mutableStateOf("") }
@@ -3036,6 +3037,7 @@ internal fun NexusApp(accessToken: String) {
                                                         scope.launch {
                                                             deviceRequestBusy = true
                                                             remoteResultMediaUrl = ""
+                                                            remoteResultRequestId = ""
                                                             remoteResultMediaType = ""
                                                             remoteResultMimeType = ""
                                                             if (feature.third == "screen") {
@@ -3090,6 +3092,7 @@ internal fun NexusApp(accessToken: String) {
                                                                         val result = liveResult
                                                                         remoteResultImageBase64 = result.optString("imageJpegBase64", remoteResultImageBase64)
                                                                         remoteResultMediaUrl = request?.optString("mediaUrl").orEmpty()
+                                                                        remoteResultRequestId = requestId
                                                                         remoteResultMediaType = result.optString("mediaType")
                                                                         remoteResultMimeType = result.optString("mediaMimeType")
                                                                         remoteResultMessage = when {
@@ -3148,14 +3151,25 @@ internal fun NexusApp(accessToken: String) {
                                     if (remoteResultMediaUrl.isNotBlank()) {
                                         OutlinedButton(
                                             onClick = {
-                                                try {
-                                                    val mediaIntent = Intent(Intent.ACTION_VIEW).apply {
-                                                        setDataAndType(Uri.parse(remoteResultMediaUrl), remoteResultMimeType.ifBlank { "*/*" })
-                                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                scope.launch {
+                                                    try {
+                                                        val targetId = activeTarget?.optString("device_id").orEmpty()
+                                                        val refreshedUrl = if (targetId.isNotBlank() && remoteResultRequestId.isNotBlank()) {
+                                                            val latest = deviceApiGet(
+                                                                "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$remoteResultRequestId"
+                                                            )
+                                                            latest.optJSONObject("request")?.optString("mediaUrl").orEmpty()
+                                                        } else remoteResultMediaUrl
+                                                        require(refreshedUrl.startsWith("https://")) { "Media link expired or unavailable" }
+                                                        remoteResultMediaUrl = refreshedUrl
+                                                        val mediaIntent = Intent(Intent.ACTION_VIEW).apply {
+                                                            setDataAndType(Uri.parse(refreshedUrl), remoteResultMimeType.ifBlank { "*/*" })
+                                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                        }
+                                                        context.startActivity(Intent.createChooser(mediaIntent, if (sinhala) "NEXUS මාධ්‍යය විවෘත කරන්න" else "Open NEXUS media"))
+                                                    } catch (error: Exception) {
+                                                        deviceStatusMessage = if (sinhala) "මාධ්‍ය සබැඳිය යාවත්කාලීන කර විවෘත කළ නොහැක." else "Could not refresh or open this media link."
                                                     }
-                                                    context.startActivity(Intent.createChooser(mediaIntent, if (sinhala) "NEXUS මාධ්‍යය විවෘත කරන්න" else "Open NEXUS media"))
-                                                } catch (error: Exception) {
-                                                    deviceStatusMessage = if (sinhala) "මෙම මාධ්‍යය විවෘත කිරීමට යෙදුමක් නැහැ." else "No app can open this media."
                                                 }
                                             },
                                             modifier = Modifier.fillMaxWidth()
