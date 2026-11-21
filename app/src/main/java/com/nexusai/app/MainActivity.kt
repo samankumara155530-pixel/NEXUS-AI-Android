@@ -934,10 +934,15 @@ internal fun NexusApp(accessToken: String) {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val requestId = remoteActionRequestId
-        val uri = pendingCameraOutputUri
+        val outputUri = pendingCameraOutputUri
+        val outputHasData = outputUri != null && runCatching {
+            context.contentResolver.openFileDescriptor(outputUri, "r")?.use { it.statSize > 0 } == true
+        }.getOrDefault(false)
+        val uri = if (outputHasData) outputUri else result.data?.data ?: outputUri
         pendingCameraOutputUri = null
         if (requestId.isNotBlank()) {
             if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) {
+                if (outputUri != null && outputUri != uri) finalizeCaptureUri(outputUri, false, false)
                 finalizeCaptureUri(uri, false, true)
                 scope.launch {
                     try {
