@@ -3062,9 +3062,11 @@ internal fun NexusApp(accessToken: String) {
                                                                 )
                                                                 val requestId = sent.optString("requestId")
                                                                 var status = "pending"
-                                                                val maxAttempts = when (feature.third) {
-                                                                    "screen" -> 40
-                                                                    "camera", "gallery", "microphone" -> 180
+                                                                val sessionActive = sent.optBoolean("sessionActive", false)
+                                                                val maxAttempts = when {
+                                                                    sessionActive -> 840
+                                                                    feature.third == "screen" -> 40
+                                                                    feature.third in setOf("camera", "gallery", "microphone") -> 180
                                                                     else -> 30
                                                                 }
                                                                 for (attempt in 0 until maxAttempts) {
