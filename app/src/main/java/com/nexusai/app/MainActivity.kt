@@ -15,6 +15,7 @@ import android.location.LocationManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
+import java.io.File
 import android.speech.RecognizerIntent
 import android.provider.MediaStore
 import android.provider.CalendarContract
@@ -1060,6 +1061,46 @@ internal fun NexusApp(accessToken: String) {
         } else videoLauncher.launch(intent)
     }
 
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val requestId = remoteActionRequestId
+        if (granted && requestId.isNotBlank()) {
+            try {
+                val serviceIntent = Intent(context, NexusAudioRecordService::class.java).apply {
+                    action = NexusAudioRecordService.ACTION_START
+                    putExtra(NexusAudioRecordService.EXTRA_REQUEST_ID, requestId)
+                }
+                ContextCompat.startForegroundService(context, serviceIntent)
+                deviceStatusMessage = if (sinhala) "මයික්‍රෆෝනයෙන් තත්පර 30ක් දක්වා පටිගත කිරීම ආරම්භ කළා. Notification එකෙන් නතර කළ හැකියි." else "Microphone recording started for up to 30 seconds. Stop it from the notification."
+            } catch (error: Exception) {
+                remoteActionResult = JSONObject().put("reason", error.message ?: "audio_service_start_failed")
+            }
+        } else if (requestId.isNotBlank()) {
+            remoteActionResult = JSONObject().put("reason", "microphone_permission_denied")
+        }
+    }
+
+    fun launchRemoteAudioRecording() {
+        if (remoteActionRequestId.isBlank()) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                val serviceIntent = Intent(context, NexusAudioRecordService::class.java).apply {
+                    action = NexusAudioRecordService.ACTION_START
+                    putExtra(NexusAudioRecordService.EXTRA_REQUEST_ID, remoteActionRequestId)
+                }
+                ContextCompat.startForegroundService(context, serviceIntent)
+                deviceStatusMessage = if (sinhala) "මයික්‍රෆෝන පටිගත කිරීම ආරම්භ කළා. තත්පර 30කින් ස්වයංක්‍රීයව නවතී." else "Microphone recording started. It stops automatically after 30 seconds."
+            } catch (error: Exception) {
+                remoteActionResult = JSONObject().put("reason", error.message ?: "audio_service_start_failed")
+            }
+        } else {
+            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -1134,13 +1175,7 @@ internal fun NexusApp(accessToken: String) {
             when (feature) {
                 "camera" -> showCameraModeDialog = true
                 "gallery" -> galleryLauncher.launch(arrayOf("image/*", "video/*"))
-                "microphone" -> voiceLauncher.launch(
-                    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (sinhala) "si-LK" else "en-US")
-                        putExtra(RecognizerIntent.EXTRA_PROMPT, if (sinhala) "NEXUS සඳහා ඔබේ හඬ පණිවිඩය කියන්න" else "Speak your NEXUS voice message")
-                    }
-                )
+                "microphone" -> launchRemoteAudioRecording()
                 "screen" -> {
                     val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                     screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
@@ -3807,13 +3842,7 @@ internal fun NexusApp(accessToken: String) {
                                 } else when (feature) {
                                     "camera" -> showCameraModeDialog = true
                                     "gallery" -> galleryLauncher.launch(arrayOf("image/*", "video/*"))
-                                    "microphone" -> voiceLauncher.launch(
-                                        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (sinhala) "si-LK" else "en-US")
-                                            putExtra(RecognizerIntent.EXTRA_PROMPT, if (sinhala) "NEXUS සඳහා ඔබේ හඬ පණිවිඩය කියන්න" else "Speak your NEXUS voice message")
-                                        }
-                                    )
+                                    "microphone" -> launchRemoteAudioRecording()
                                     "screen" -> {
                                         val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                                         screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
