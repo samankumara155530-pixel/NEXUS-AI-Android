@@ -98,6 +98,30 @@ internal fun getStableDeviceId(context: Context): String {
 private const val BACKEND_URL =
     "https://nexus-ai-backend-six.vercel.app/chat"
 
+// Encode a small, consented preview so the Controller can retrieve the Target result.
+private fun bitmapToRemoteResult(source: Bitmap): JSONObject {
+    val ratio = minOf(1f, 480f / maxOf(source.width, source.height).toFloat())
+    val scaled = if (ratio < 1f) {
+        Bitmap.createScaledBitmap(
+            source,
+            (source.width * ratio).toInt().coerceAtLeast(1),
+            (source.height * ratio).toInt().coerceAtLeast(1),
+            true
+        )
+    } else source
+    val output = ByteArrayOutputStream()
+    var quality = 55
+    do {
+        output.reset()
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)
+        quality -= 10
+    } while (output.size() > 42_000 && quality >= 25)
+    return JSONObject()
+        .put("imageMimeType", "image/jpeg")
+        .put("imageJpegBase64", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP))
+        .put("imageBytes", output.size())
+}
+
 // MAIN ACTIVITY
 
 class MainActivity : ComponentActivity() {
