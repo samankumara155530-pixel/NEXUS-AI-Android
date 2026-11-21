@@ -60,18 +60,25 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 internal object NexusFcm {
     private const val BACKEND = "https://nexus-ai-backend-six.vercel.app"
 
-    suspend fun registerCurrentInstallation(context: android.content.Context) {
+    suspend fun registerCurrentInstallation(
+        context: android.content.Context,
+        currentAccessToken: String
+    ) {
         val token = withContext(Dispatchers.IO) {
             com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
         }
-        registerToken(context, token)
+        registerToken(context, token, currentAccessToken)
     }
 
-    suspend fun registerToken(context: android.content.Context, token: String) {
-        if (token.isBlank()) return
-        val accessToken = withContext(Dispatchers.IO) {
-            NexusAuthManager.restoreSession(context)
-        } ?: return
+    suspend fun registerToken(
+        context: android.content.Context,
+        token: String,
+        currentAccessToken: String? = null
+    ) {
+        if (token.isBlank()) throw IllegalStateException("FCM_TOKEN_EMPTY")
+        val accessToken = currentAccessToken?.takeIf { it.isNotBlank() }
+            ?: withContext(Dispatchers.IO) { NexusAuthManager.restoreSession(context) }
+            ?: throw IllegalStateException("NEXUS_SESSION_UNAVAILABLE_FOR_FCM_REGISTRATION")
 
         post(
             context,
