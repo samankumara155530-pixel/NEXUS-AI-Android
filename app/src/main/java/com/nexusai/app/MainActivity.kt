@@ -2807,7 +2807,7 @@ internal fun NexusApp(accessToken: String) {
                                                                         break
                                                                     }
                                                                 }
-                                                                if (status == "pending" || status == "approved") {
+                                                                if ((status == "pending" || status == "approved") && feature.third != "session") {
                                                                     deviceStatusMessage = if (sinhala) "Target වෙත අවසර ඉල්ලීම යවා ඇත. Target දුරකථනයේ අනුමැතිය බලාපොරොත්තු වේ." else "Request sent. Waiting for approval/action on Target phone."
                                                                 }
                                                             } catch (error: Exception) {
