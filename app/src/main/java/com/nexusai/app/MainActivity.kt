@@ -78,7 +78,7 @@ private const val KEY_STABLE_DEVICE_ID = "stable_device_id"
  * Stable identifier for this app installation. It is generated once and kept
  * locally; it is not an IMEI, phone number, or hardware identifier.
  */
-private fun getStableDeviceId(context: Context): String {
+internal fun getStableDeviceId(context: Context): String {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val existing = prefs.getString(KEY_STABLE_DEVICE_ID, null)
     if (!existing.isNullOrBlank()) return existing
