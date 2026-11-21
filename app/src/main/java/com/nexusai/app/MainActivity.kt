@@ -958,6 +958,7 @@ internal fun NexusApp(accessToken: String) {
                 }
             } else {
                 finalizeCaptureUri(uri, false, false)
+                if (outputUri != null && outputUri != uri) finalizeCaptureUri(outputUri, false, false)
                 remoteActionResult = JSONObject().put("reason", "camera_photo_cancelled_or_missing")
             }
         } else {
