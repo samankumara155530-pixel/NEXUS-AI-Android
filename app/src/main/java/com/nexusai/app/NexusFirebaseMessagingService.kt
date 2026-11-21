@@ -6,7 +6,6 @@ import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -50,11 +49,6 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
                 Log.e(TAG, "Wake acknowledgement failed: ${error.message}", error)
             }
         }
-    }
-
-    override fun onDestroy() {
-        serviceScope.cancel()
-        super.onDestroy()
     }
 
     private companion object {
