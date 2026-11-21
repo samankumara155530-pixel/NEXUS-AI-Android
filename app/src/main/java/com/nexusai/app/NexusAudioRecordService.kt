@@ -138,9 +138,15 @@ class NexusAudioRecordService : Service() {
                 stopSelf()
             }, MAX_DURATION_MS)
         } catch (error: SecurityException) {
+            runCatching { recorder?.reset() }
+            runCatching { recorder?.release() }
+            recorder = null
             saveFailure("microphone_security_exception")
             stopSelf()
         } catch (error: Exception) {
+            runCatching { recorder?.reset() }
+            runCatching { recorder?.release() }
+            recorder = null
             saveFailure(error.message ?: "audio_recording_start_failed")
             stopSelf()
         }
