@@ -2421,6 +2421,62 @@ internal fun NexusApp(accessToken: String) {
                                         )
                                     }
                                 }
+                                val activeTarget = pairedDevices.firstOrNull {
+                                    it.optString("device_role") == "target" &&
+                                        (it.isNull("revoked_at") || it.optString("revoked_at") == "null")
+                                }
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            wakeBusy = true
+                                            wakeStatusMessage = if (sinhala) "Wake පණිවිඩය යවමින්..." else "Sending wake message..."
+                                            try {
+                                                val targetId = activeTarget?.optString("device_id").orEmpty()
+                                                require(targetId.isNotBlank() && targetId != "null") {
+                                                    if (sinhala) "සම්බන්ධ Target දුරකථනය හමු වුණේ නැහැ." else "No paired Target phone found."
+                                                }
+                                                val sent = deviceApiPost(
+                                                    "devices/$targetId/push/wake",
+                                                    JSONObject().put("controllerDeviceId", getStableDeviceId(context))
+                                                )
+                                                val requestId = sent.optString("requestId")
+                                                wakeStatusMessage = if (sinhala) "Firebase වෙත යැවුවා. Target ප්‍රතිචාරය බලාපොරොත්තු වෙමින්..." else "Accepted by Firebase. Waiting for Target acknowledgement..."
+                                                var finalStatus = "sent"
+                                                repeat(12) {
+                                                    delay(2000)
+                                                    val status = deviceApiGet(
+                                                        "devices/$targetId/push/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
+                                                    )
+                                                    finalStatus = status.optJSONObject("delivery")?.optString("status") ?: finalStatus
+                                                    wakeStatusMessage = when (finalStatus) {
+                                                        "received" -> if (sinhala) "Target දුරකථනයට පණිවිඩය ලැබුණා." else "Target received the wake message."
+                                                        "processed" -> if (sinhala) "Target පණිවිඩය සාර්ථකව සකස් කළා." else "Target processed the wake message."
+                                                        "failed" -> if (sinhala) "පණිවිඩය යැවීම අසාර්ථකයි." else "Wake delivery failed."
+                                                        else -> if (sinhala) "Target ප්‍රතිචාරය බලාපොරොත්තු වෙමින්..." else "Waiting for Target acknowledgement..."
+                                                    }
+                                                    if (finalStatus == "processed" || finalStatus == "failed") return@repeat
+                                                }
+                                                if (finalStatus == "sent") {
+                                                    wakeStatusMessage = if (sinhala) "Firebase පණිවිඩය භාරගත්තා; Target ලැබීම තවම තහවුරු නැහැ." else "Firebase accepted the message; Target receipt is not confirmed yet."
+                                                }
+                                            } catch (error: Exception) {
+                                                wakeStatusMessage = (error.message ?: "Wake request failed").take(160)
+                                            } finally {
+                                                wakeBusy = false
+                                            }
+                                        }
+                                    },
+                                    enabled = !wakeBusy && activeTarget != null,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    if (wakeBusy) CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White)
+                                    else Icon(Icons.Default.PowerSettingsNew, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (sinhala) "Target Wake පරීක්ෂාව" else "Wake Target")
+                                }
+                                if (wakeStatusMessage.isNotBlank()) {
+                                    Text(wakeStatusMessage, color = MaterialTheme.colorScheme.secondary)
+                                }
                                 Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
                                 val remoteFeatures = listOf(
                                     Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
