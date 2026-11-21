@@ -719,6 +719,9 @@ internal fun NexusApp(accessToken: String) {
     var pendingVideoOutputUri by remember { mutableStateOf<Uri?>(null) }
     var showCameraModeDialog by remember { mutableStateOf(false) }
     var remoteResultImageBase64 by remember { mutableStateOf("") }
+    var remoteResultMediaUrl by remember { mutableStateOf("") }
+    var remoteResultMediaType by remember { mutableStateOf("") }
+    var remoteResultMimeType by remember { mutableStateOf("") }
     var remoteResultMessage by remember { mutableStateOf("") }
     val remoteResultPreviewBitmap = remember(remoteResultImageBase64) {
         runCatching {
@@ -2982,6 +2985,9 @@ internal fun NexusApp(accessToken: String) {
                                                     } else {
                                                         scope.launch {
                                                             deviceRequestBusy = true
+                                                            remoteResultMediaUrl = ""
+                                                            remoteResultMediaType = ""
+                                                            remoteResultMimeType = ""
                                                             if (feature.third == "screen") {
                                                                 remoteResultImageBase64 = ""
                                                                 remoteResultMessage = ""
@@ -3028,7 +3034,13 @@ internal fun NexusApp(accessToken: String) {
                                                                     if (status == "completed") {
                                                                         val result = liveResult
                                                                         remoteResultImageBase64 = result.optString("imageJpegBase64", remoteResultImageBase64)
+                                                                        remoteResultMediaUrl = request?.optString("mediaUrl").orEmpty()
+                                                                        remoteResultMediaType = result.optString("mediaType")
+                                                                        remoteResultMimeType = result.optString("mediaMimeType")
                                                                         remoteResultMessage = when {
+                                                                            remoteResultMediaUrl.isNotBlank() && remoteResultMediaType == "image" -> if (sinhala) "Target ඡායාරූපය ලැබුණා." else "Photo received from Target."
+                                                                            remoteResultMediaUrl.isNotBlank() && remoteResultMediaType == "video" -> if (sinhala) "ශබ්දය සහිත වීඩියෝව ලැබුණා." else "Video with audio received from Target."
+                                                                            remoteResultMediaUrl.isNotBlank() && remoteResultMediaType == "audio" -> if (sinhala) "හඬ පටිගත කිරීම ලැබුණා." else "Audio recording received from Target."
                                                                             result.has("transcript") -> result.optString("transcript")
                                                                             result.has("latitude") -> "Location: ${result.optDouble("latitude")}, ${result.optDouble("longitude")}"
                                                                             result.optString("cameraResult") == "captured" -> "Camera preview received from Target."
@@ -3077,6 +3089,39 @@ internal fun NexusApp(accessToken: String) {
                                             contentDescription = "Consent-approved Target image preview",
                                             modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
                                         )
+                                    }
+                                    if (remoteResultMediaUrl.isNotBlank()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                try {
+                                                    val mediaIntent = Intent(Intent.ACTION_VIEW).apply {
+                                                        setDataAndType(Uri.parse(remoteResultMediaUrl), remoteResultMimeType.ifBlank { "*/*" })
+                                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                    }
+                                                    context.startActivity(Intent.createChooser(mediaIntent, if (sinhala) "NEXUS මාධ්‍යය විවෘත කරන්න" else "Open NEXUS media"))
+                                                } catch (error: Exception) {
+                                                    deviceStatusMessage = if (sinhala) "මෙම මාධ්‍යය විවෘත කිරීමට යෙදුමක් නැහැ." else "No app can open this media."
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(
+                                                when (remoteResultMediaType) {
+                                                    "video" -> Icons.Default.PlayCircle
+                                                    "audio" -> Icons.Default.VolumeUp
+                                                    else -> Icons.Default.Image
+                                                },
+                                                null
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                when (remoteResultMediaType) {
+                                                    "video" -> if (sinhala) "වීඩියෝව බලන්න / ශබ්දය අහන්න" else "Play video with audio"
+                                                    "audio" -> if (sinhala) "හඬ පටිගත කිරීම අහන්න" else "Play audio recording"
+                                                    else -> if (sinhala) "ඡායාරූපය බලන්න" else "View photo"
+                                                }
+                                            )
+                                        }
                                     }
                                 }
                                 Text(
@@ -3649,6 +3694,60 @@ internal fun NexusApp(accessToken: String) {
                     }
                 }
             }
+        }
+
+        if (showCameraModeDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showCameraModeDialog = false
+                    if (remoteActionRequestId.isNotBlank()) {
+                        remoteActionResult = JSONObject().put("reason", "camera_action_cancelled")
+                    }
+                },
+                title = { Text(if (sinhala) "Camera ක්‍රියාව තෝරන්න" else "Choose Camera action") },
+                text = {
+                    Text(
+                        if (sinhala) "ඡායාරූපයක් ගන්නද, නැත්නම් තත්පර 30ක් දක්වා ශබ්දයත් සමඟ වීඩියෝවක් පටිගත කරන්නද?"
+                        else "Take a photo or record a video with audio for up to 30 seconds?"
+                    )
+                },
+                confirmButton = {
+                    Column {
+                        TextButton(
+                            onClick = {
+                                showCameraModeDialog = false
+                                launchRemotePhotoCapture()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "ඡායාරූපයක් ගන්න" else "Take Photo")
+                        }
+                        TextButton(
+                            onClick = {
+                                showCameraModeDialog = false
+                                launchRemoteVideoCapture()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Videocam, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "ශබ්දය සමඟ වීඩියෝවක් ගන්න" else "Record Video with Audio")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showCameraModeDialog = false
+                        if (remoteActionRequestId.isNotBlank()) {
+                            remoteActionResult = JSONObject().put("reason", "camera_action_cancelled")
+                        }
+                    }) {
+                        Text(if (sinhala) "අවලංගු කරන්න" else "Cancel")
+                    }
+                }
+            )
         }
 
         if (!isControllerBuild && pendingRemoteRequestId.isNotBlank() &&
