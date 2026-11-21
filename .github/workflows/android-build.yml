@@ -4,6 +4,8 @@ name: Build NEXUS AI APK
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
