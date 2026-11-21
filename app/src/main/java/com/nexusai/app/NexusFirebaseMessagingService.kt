@@ -27,7 +27,27 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
         if (message.data["type"] == "NEXUS_WAKE" &&
             message.data["action"] == "SYNC_PRESENCE"
         ) {
-            NexusHeartbeatWorker.enable(applicationContext)
+            val requestId = message.data["requestId"].orEmpty()
+            val prefs = getSharedPreferences("nexus_local_data", MODE_PRIVATE)
+            val deviceId = prefs.getString("stable_device_id", null).orEmpty()
+            if (requestId.isNotBlank() && deviceId.isNotBlank()) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        NexusPushManager.acknowledgeWake(
+                            applicationContext,
+                            deviceId,
+                            requestId,
+                            "received"
+                        )
+                    } catch (_: Exception) {
+                        // The processed acknowledgement from the worker is retried if needed.
+                    }
+                }
+                NexusHeartbeatWorker.enable(applicationContext, requestId)
+            } else {
+                // Legacy or malformed wake messages must not trigger unrelated work.
+                android.util.Log.w("NexusFCM", "Ignored wake message without request/device identity")
+            }
         }
     }
 }
