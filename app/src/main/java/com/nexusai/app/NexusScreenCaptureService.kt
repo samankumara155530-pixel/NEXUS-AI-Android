@@ -233,8 +233,9 @@ class NexusScreenCaptureService : Service() {
         runCatching { imageReader?.setOnImageAvailableListener(null, null) }
         runCatching { imageReader?.close() }
         imageReader = null
-        runCatching { projection?.stop() }
+        val activeProjection = projection
         projection = null
+        runCatching { activeProjection?.stop() }
         runCatching { handlerThread?.quitSafely() }
         handlerThread = null
     }
