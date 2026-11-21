@@ -2381,15 +2381,13 @@ internal fun NexusApp(accessToken: String) {
                                                                     else
                                                                         "Sent to FCM. Waiting for target phone receipt..."
                                                                     var finalStatus = "sent"
-                                                                    repeat(8) {
+                                                                    for (attempt in 0 until 8) {
                                                                         delay(1500)
                                                                         val statusResponse = deviceApiGet(
                                                                             "devices/$targetDeviceId/push/status?controllerDeviceId=$currentDeviceId&requestId=$requestId"
                                                                         )
                                                                         finalStatus = statusResponse.optJSONObject("delivery")?.optString("status").orEmpty()
-                                                                        if (finalStatus == "received" || finalStatus == "processed" || finalStatus == "failed") {
-                                                                            return@repeat
-                                                                        }
+                                                                        if (finalStatus == "received" || finalStatus == "processed" || finalStatus == "failed") break
                                                                     }
                                                                     deviceStatusMessage = when (finalStatus) {
                                                                         "processed" -> if (sinhala) "සාර්ථකයි: Target දුරකථනයට පණිවිඩය ලැබී Presence Sync ක්‍රියාත්මක කළා." else "Success: target received the message and completed presence sync."
