@@ -184,7 +184,7 @@ private suspend fun remoteMediaUpload(
     try {
         storageConnection.requestMethod = "PUT"
         storageConnection.connectTimeout = 20000
-        storageConnection.readTimeout = 90000
+        storageConnection.readTimeout = 180000
         storageConnection.doOutput = true
         storageConnection.setRequestProperty("Content-Type", mimeType)
         storageConnection.setFixedLengthStreamingMode(bytes.size)
