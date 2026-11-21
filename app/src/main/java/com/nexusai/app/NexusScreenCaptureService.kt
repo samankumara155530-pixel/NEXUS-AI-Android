@@ -1,9 +1,9 @@
 package com.nexusai.app
 
 import android.app.Activity
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -33,8 +33,8 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
 /**
- * Captures exactly one screen preview after the Android system consent dialog.
- * It never runs as a hidden/background screen recorder.
+ * User-consented, visible, low-frame-rate screen sharing.
+ * Android's MediaProjection consent dialog is mandatory for every session.
  */
 class NexusScreenCaptureService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -42,12 +42,20 @@ class NexusScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var handlerThread: HandlerThread? = null
-    private var finished = false
+    private var captureHandler: Handler? = null
+    @Volatile private var sessionEnded = false
+    @Volatile private var uploadInFlight = false
+    private var lastUploadAt = 0L
     private var requestId = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            finishSession("controller_or_target_stopped")
+            return START_NOT_STICKY
+        }
+
         requestId = intent?.getStringExtra(EXTRA_REQUEST_ID).orEmpty()
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
             ?: Activity.RESULT_CANCELED
@@ -65,11 +73,19 @@ class NexusScreenCaptureService : Service() {
 
         try {
             createNotificationChannel()
+            val stopIntent = Intent(this, NexusScreenCaptureService::class.java).apply {
+                action = ACTION_STOP
+            }
+            val stopPendingIntent = PendingIntent.getService(
+                this, requestId.hashCode(), stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_menu_view)
-                .setContentTitle("NEXUS AI — Screen sharing")
-                .setContentText("A one-time screen preview is being sent with your approval.")
+                .setContentTitle("NEXUS AI — Screen sharing active")
+                .setContentText("Your screen is being shared. Tap Stop to end the session.")
                 .setOngoing(true)
+                .addAction(android.R.drawable.ic_media_pause, "Stop sharing", stopPendingIntent)
                 .build()
             if (Build.VERSION.SDK_INT >= 29) {
                 startForeground(
@@ -102,39 +118,39 @@ class NexusScreenCaptureService : Service() {
             ?: throw IllegalStateException("MEDIA_PROJECTION_UNAVAILABLE")
         projection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                cleanupCapture()
-                stopSelf()
+                if (!sessionEnded) finishSession("android_projection_stopped")
             }
         }, Handler(mainLooper))
 
         handlerThread = HandlerThread("NEXUS-Screen-Capture").apply { start() }
         val handler = Handler(handlerThread!!.looper)
+        captureHandler = handler
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
         imageReader!!.setOnImageAvailableListener({ reader ->
-            if (finished) {
-                reader.acquireLatestImage()?.close()
+            val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
+            val now = System.currentTimeMillis()
+            if (sessionEnded || uploadInFlight || now - lastUploadAt < FRAME_INTERVAL_MS) {
+                image.close()
                 return@setOnImageAvailableListener
             }
-            val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            finished = true
+            uploadInFlight = true
+            lastUploadAt = now
             try {
                 val bitmap = imageToBitmap(image)
                 val payload = encodePreview(bitmap)
+                    .put("screenCapture", "live_frame")
+                    .put("capturedAt", now)
                 serviceScope.launch {
                     try {
-                        NexusFcm.respondRemote(
-                            applicationContext,
-                            requestId,
-                            "completed",
-                            payload.put("screenCapture", "one_time_preview")
-                        )
+                        NexusFcm.uploadScreenFrame(applicationContext, requestId, payload)
                     } catch (error: Exception) {
-                        Log.e(TAG, "Could not upload screen preview", error)
+                        Log.w(TAG, "Screen frame upload failed: ${error.message}")
                     } finally {
-                        stopCaptureAndService()
+                        uploadInFlight = false
                     }
                 }
             } catch (error: Exception) {
+                uploadInFlight = false
                 Log.e(TAG, "Screen frame conversion failed", error)
                 finishWithFailure("screen_frame_conversion_failed")
             } finally {
@@ -143,7 +159,7 @@ class NexusScreenCaptureService : Service() {
         }, handler)
 
         virtualDisplay = projection?.createVirtualDisplay(
-            "NEXUS-Consent-Screen-Preview",
+            "NEXUS-Consent-Screen-Share",
             width,
             height,
             density,
@@ -153,18 +169,14 @@ class NexusScreenCaptureService : Service() {
             handler
         ) ?: throw IllegalStateException("VIRTUAL_DISPLAY_UNAVAILABLE")
 
-        // Some devices deliver the first frame asynchronously; fail closed if no frame arrives.
-        handler.postDelayed({
-            if (!finished) finishWithFailure("screen_capture_timeout")
-        }, 12_000L)
+        handler.postDelayed({ finishSession("screen_share_timeout") }, MAX_SESSION_MS)
     }
 
     private fun imageToBitmap(image: Image): Bitmap {
         val plane = image.planes[0]
         val buffer: ByteBuffer = plane.buffer
         val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * image.width
+        val rowPadding = plane.rowStride - pixelStride * image.width
         val paddedWidth = image.width + rowPadding / pixelStride
         val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
         buffer.rewind()
@@ -185,12 +197,12 @@ class NexusScreenCaptureService : Service() {
             )
         } else source
         val output = ByteArrayOutputStream()
-        var quality = 55
+        var quality = 50
         do {
             output.reset()
             scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)
             quality -= 10
-        } while (output.size() > 42_000 && quality >= 25)
+        } while (output.size() > 42_000 && quality >= 20)
         if (scaled !== source) scaled.recycle()
         source.recycle()
         if (output.size() > 48_000) throw IllegalStateException("SCREEN_PREVIEW_TOO_LARGE")
@@ -201,20 +213,23 @@ class NexusScreenCaptureService : Service() {
     }
 
     private fun finishWithFailure(reason: String) {
-        if (finished && reason == "screen_capture_timeout") return
-        finished = true
+        if (sessionEnded) return
+        sessionEnded = true
+        reportEnd("failed", JSONObject().put("reason", reason))
+    }
+
+    private fun finishSession(reason: String) {
+        if (sessionEnded) return
+        sessionEnded = true
+        reportEnd("completed", JSONObject().put("screenCapture", "session_ended").put("reason", reason))
+    }
+
+    private fun reportEnd(status: String, result: JSONObject) {
         serviceScope.launch {
             try {
-                if (requestId.isNotBlank()) {
-                    NexusFcm.respondRemote(
-                        applicationContext,
-                        requestId,
-                        "failed",
-                        JSONObject().put("reason", reason)
-                    )
-                }
+                NexusFcm.respondRemote(applicationContext, requestId, status, result)
             } catch (error: Exception) {
-                Log.e(TAG, "Could not report screen capture failure", error)
+                Log.e(TAG, "Could not report screen session end", error)
             } finally {
                 stopCaptureAndService()
             }
@@ -238,6 +253,7 @@ class NexusScreenCaptureService : Service() {
         runCatching { activeProjection?.stop() }
         runCatching { handlerThread?.quitSafely() }
         handlerThread = null
+        captureHandler = null
     }
 
     private fun createNotificationChannel() {
@@ -249,7 +265,7 @@ class NexusScreenCaptureService : Service() {
                     "NEXUS Screen Sharing",
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "Visible notification while a user-approved screen preview is captured"
+                    description = "Visible notification while a user-approved screen share is active"
                 }
             )
         }
@@ -264,8 +280,11 @@ class NexusScreenCaptureService : Service() {
         const val EXTRA_RESULT_CODE = "projection_result_code"
         const val EXTRA_RESULT_DATA = "projection_result_data"
         const val EXTRA_REQUEST_ID = "projection_request_id"
+        const val ACTION_STOP = "com.nexusai.app.action.STOP_SCREEN_SHARE"
         private const val TAG = "NEXUS_SCREEN"
         private const val CHANNEL_ID = "nexus_screen_capture"
         private const val NOTIFICATION_ID = 3201
+        private const val FRAME_INTERVAL_MS = 1200L
+        private const val MAX_SESSION_MS = 60_000L
     }
 }
