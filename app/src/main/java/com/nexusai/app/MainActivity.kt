@@ -3432,9 +3432,26 @@ internal fun NexusApp(accessToken: String) {
                                                             .put("deviceId", getStableDeviceId(context))
                                                             .put("requestId", remoteSessionRequestId)
                                                     )
+                                                    // Stop any active microphone/screen capture immediately.
+                                                    runCatching {
+                                                        context.startService(
+                                                            Intent(context, NexusAudioRecordService::class.java).apply {
+                                                                action = NexusAudioRecordService.ACTION_CANCEL
+                                                            }
+                                                        )
+                                                    }
+                                                    runCatching {
+                                                        context.stopService(Intent(context, NexusScreenCaptureService::class.java))
+                                                    }
                                                     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                                                         .remove("remote_session_request_id")
                                                         .remove("remote_session_expires_at")
+                                                        .remove("remote_audio_active_request_id")
+                                                        .remove("remote_audio_result_request_id")
+                                                        .remove("remote_audio_result_path")
+                                                        .remove("remote_audio_result_size")
+                                                        .remove("remote_audio_result_mime")
+                                                        .remove("remote_audio_result_error")
                                                         .apply()
                                                     remoteSessionRequestId = ""
                                                     remoteSessionExpiresAt = 0L
