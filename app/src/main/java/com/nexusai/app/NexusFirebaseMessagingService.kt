@@ -63,6 +63,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
                 prefs.edit()
                     .putString("pending_remote_request_id", requestId)
                     .putString("pending_remote_feature", feature)
+                    .putBoolean("pending_remote_requires_approval", true)
                     .putLong("pending_remote_created_at", System.currentTimeMillis())
                     .apply()
                 showRemoteApprovalNotification(requestId, feature)
@@ -82,6 +83,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
                 prefs.edit()
                     .putString("pending_remote_request_id", requestId)
                     .putString("pending_remote_feature", feature)
+                    .putBoolean("pending_remote_requires_approval", false)
                     .putLong("pending_remote_created_at", System.currentTimeMillis())
                     .apply()
                 if (!prefs.getBoolean("target_ui_foreground", false)) {
