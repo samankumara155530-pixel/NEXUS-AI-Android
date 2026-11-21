@@ -44,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -574,6 +576,8 @@ internal fun NexusApp(accessToken: String) {
     var pendingRemoteFeature by remember { mutableStateOf("") }
     var remoteActionRequestId by remember { mutableStateOf("") }
     var remoteActionResult by remember { mutableStateOf<JSONObject?>(null) }
+    var remoteResultImageBase64 by remember { mutableStateOf("") }
+    var remoteResultMessage by remember { mutableStateOf("") }
 
     var prompt by remember {
         mutableStateOf("")
@@ -2609,20 +2613,32 @@ internal fun NexusApp(accessToken: String) {
                                                                 )
                                                                 val requestId = sent.optString("requestId")
                                                                 var status = "pending"
-                                                                repeat(20) {
+                                                                for (attempt in 0 until 30) {
                                                                     kotlinx.coroutines.delay(2000)
                                                                     val update = deviceApiGet(
                                                                         "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
                                                                     )
                                                                     val request = update.optJSONObject("request")
                                                                     status = request?.optString("status", "pending") ?: "pending"
-                                                                    if (status in setOf("declined", "completed", "failed")) {
+                                                                    if (status == "completed") {
+                                                                        val result = request?.optJSONObject("result") ?: JSONObject()
+                                                                        remoteResultImageBase64 = result.optString("imageJpegBase64", "")
+                                                                        remoteResultMessage = when {
+                                                                            result.has("transcript") -> result.optString("transcript")
+                                                                            result.has("latitude") -> "Location: ${result.optDouble("latitude")}, ${result.optDouble("longitude")}"
+                                                                            result.optString("cameraResult") == "captured" -> "Camera preview received from Target."
+                                                                            result.optString("gallerySelection") == "selected" -> "Gallery preview received from Target."
+                                                                            else -> "Target action completed."
+                                                                        }
+                                                                        deviceStatusMessage = if (sinhala) "${feature.second} ප්‍රතිඵලය Target වෙතින් ලැබුණා." else "${feature.second} result received from Target."
+                                                                        break
+                                                                    }
+                                                                    if (status == "declined" || status == "failed") {
                                                                         deviceStatusMessage = when (status) {
                                                                             "declined" -> if (sinhala) "Target පරිශීලකයා ඉල්ලීම ප්‍රතික්ෂේප කළා." else "Target user declined the request."
-                                                                            "completed" -> if (sinhala) "${feature.second} ඉල්ලීම සම්පූර්ණයි." else "${feature.second} request completed."
                                                                             else -> if (sinhala) "${feature.second} ක්‍රියාව අසාර්ථකයි." else "${feature.second} action failed."
                                                                         }
-                                                                        return@repeat
+                                                                        break
                                                                     }
                                                                 }
                                                                 if (status == "pending" || status == "approved") {
@@ -2645,6 +2661,24 @@ internal fun NexusApp(accessToken: String) {
                                             }
                                         }
                                         if (rowFeatures.size == 1) Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                                if (remoteResultMessage.isNotBlank()) {
+                                    Text(remoteResultMessage, color = MaterialTheme.colorScheme.secondary)
+                                    val previewBitmap = remember(remoteResultImageBase64) {
+                                        runCatching {
+                                            if (remoteResultImageBase64.isBlank()) null else {
+                                                val bytes = Base64.decode(remoteResultImageBase64, Base64.DEFAULT)
+                                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                                            }
+                                        }.getOrNull()
+                                    }
+                                    if (previewBitmap != null) {
+                                        Image(
+                                            bitmap = previewBitmap,
+                                            contentDescription = "Consent-approved Target image preview",
+                                            modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
+                                        )
                                     }
                                 }
                                 Text(
