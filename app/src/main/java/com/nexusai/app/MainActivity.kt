@@ -964,10 +964,10 @@ internal fun NexusApp(accessToken: String) {
                 scope.launch {
                     try {
                         val mime = context.contentResolver.getType(uri) ?: "video/mp4"
-                        val safeMime = if (mime in setOf("video/mp4", "video/3gpp", "video/webm")) mime else "video/mp4"
+                        val safeMime = if (mime in setOf("video/mp4", "video/3gpp", "video/webm", "video/quicktime")) mime else "video/mp4"
                         val bytes = readRemoteMediaBytes(context, uri, safeMime)
                         remoteMediaUpload(context, accessToken, getStableDeviceId(context), requestId,
-                            safeMime, "camera_video.${if (safeMime == "video/3gpp") "3gp" else if (safeMime == "video/webm") "webm" else "mp4"}", bytes)
+                            safeMime, "camera_video.${if (safeMime == "video/3gpp") "3gp" else if (safeMime == "video/webm") "webm" else if (safeMime == "video/quicktime") "mov" else "mp4"}", bytes)
                         remoteActionRequestId = ""
                         remoteActionResult = null
                         deviceStatusMessage = if (sinhala) "ශබ්දය සමඟ වීඩියෝව Controller වෙත ආරක්ෂිතව යැව්වා." else "Video with audio securely sent to Controller."
@@ -994,11 +994,10 @@ internal fun NexusApp(accessToken: String) {
                         }
                         val mime = context.contentResolver.getType(uri)?.lowercase()
                             ?: throw IllegalStateException("Could not detect selected media type")
-                        val supported = mime in setOf(
-                            "image/jpeg", "image/png", "image/webp",
-                            "video/mp4", "video/3gpp", "video/webm"
+                        val supported = mime.startsWith("image/") || mime in setOf(
+                            "video/mp4", "video/3gpp", "video/webm", "video/quicktime"
                         )
-                        require(supported) { "Choose a JPG, PNG, WebP photo or MP4/3GP/WebM video" }
+                        require(supported) { "Choose a supported photo or MP4/3GP/WebM/MOV video" }
                         val uploadMime = if (mime.startsWith("image/")) "image/jpeg" else mime
                         val bytes = readRemoteMediaBytes(context, uri, uploadMime)
                         remoteMediaUpload(context, accessToken, getStableDeviceId(context),
