@@ -1299,8 +1299,9 @@ internal fun NexusApp(accessToken: String) {
                 val requiresApproval = prefs.getBoolean("pending_remote_requires_approval", true)
                 val createdAt = prefs.getLong("pending_remote_created_at", 0L)
                 val age = System.currentTimeMillis() - createdAt
+                val maxPendingAge = if (requiresApproval) 120_000L else 29 * 60 * 1000L
                 if (requestId.isNotBlank() && feature.isNotBlank() &&
-                    createdAt > 0L && age in 0L..120_000L
+                    createdAt > 0L && age in 0L..maxPendingAge
                 ) {
                     pendingRemoteRequestId = requestId
                     pendingRemoteFeature = feature
