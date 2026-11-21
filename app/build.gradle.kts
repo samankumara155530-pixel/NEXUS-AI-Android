@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Increase versionCode for every installable update.
-        versionCode = 13
-        versionName = "1.4.7"
+        versionCode = 14
+        versionName = "1.5.0"
     }
 
     signingConfigs {
@@ -69,6 +69,10 @@ kotlin {
 }
 
 dependencies {
+    // Firebase Cloud Messaging for authenticated controller-to-target wake delivery.
+    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+    implementation("com.google.firebase:firebase-messaging")
+
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
     implementation("androidx.core:core-ktx:1.15.0")
