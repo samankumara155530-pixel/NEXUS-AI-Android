@@ -2655,6 +2655,10 @@ internal fun NexusApp(accessToken: String) {
                                                     } else {
                                                         scope.launch {
                                                             deviceRequestBusy = true
+                                                            if (feature.third == "screen") {
+                                                                remoteResultImageBase64 = ""
+                                                                remoteResultMessage = ""
+                                                            }
                                                             deviceStatusMessage = if (sinhala) "${feature.second} අවසර ඉල්ලීම යවමින්..." else "Sending ${feature.second} approval request..."
                                                             try {
                                                                 val sent = deviceApiPost(
@@ -2665,7 +2669,7 @@ internal fun NexusApp(accessToken: String) {
                                                                 )
                                                                 val requestId = sent.optString("requestId")
                                                                 var status = "pending"
-                                                                for (attempt in 0 until if (feature.third == "screen") 40 else 30) {
+                                                                for (attempt in 0 until (if (feature.third == "screen") 40 else 30)) {
                                                                     kotlinx.coroutines.delay(2000)
                                                                     val update = deviceApiGet(
                                                                         "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
