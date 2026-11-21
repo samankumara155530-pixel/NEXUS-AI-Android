@@ -1,6 +1,11 @@
 package com.nexusai.app
 
 import android.util.Log
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
+import androidx.work.WorkManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -12,11 +17,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Receives high-priority NEXUS wake data messages.
- * "processed" means the target handled the non-invasive sync command only.
- * Camera, microphone, gallery and location always require target-side consent.
- */
+/** Accepts only the fixed NEXUS presence wake; never executes remote sensor commands. */
 class NexusFirebaseMessagingService : FirebaseMessagingService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -28,27 +29,26 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
         val data = message.data
-        if (data["type"] != "NEXUS_WAKE") return
+        if (data["type"] != "NEXUS_WAKE" || data["action"] != "SYNC_PRESENCE") return
         val requestId = data["requestId"]?.takeIf { it.isNotBlank() } ?: return
-        val action = data["action"] ?: "SYNC_PRESENCE"
+        val deviceId = stableDeviceId()
+        if (deviceId.isBlank()) return
 
         serviceScope.launch {
             try {
-                postAuthenticated(
-                    "/devices/push/ack",
-                    JSONObject().put("deviceId", stableDeviceId())
-                        .put("requestId", requestId).put("stage", "received")
+                val work = OneTimeWorkRequestBuilder<NexusPresenceWorker>()
+                    .setInputData(Data.Builder()
+                        .putString(NexusPresenceWorker.KEY_REQUEST_ID, requestId).build())
+                    .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                    .build()
+                WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                    "nexus-presence-$requestId", ExistingWorkPolicy.KEEP, work
                 )
-                // Sensor operations are intentionally never started from a background push.
-                if (action == "SYNC_PRESENCE") {
-                    postAuthenticated(
-                        "/devices/push/ack",
-                        JSONObject().put("deviceId", stableDeviceId())
-                            .put("requestId", requestId).put("stage", "processed")
-                    )
-                }
+                postAuthenticated("/devices/push/ack",
+                    JSONObject().put("deviceId", deviceId)
+                        .put("requestId", requestId).put("stage", "received"))
             } catch (error: Exception) {
-                Log.e(TAG, "Could not acknowledge NEXUS wake request", error)
+                Log.e(TAG, "Could not queue or acknowledge NEXUS wake request", error)
             }
         }
     }
@@ -62,10 +62,8 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
         val deviceId = stableDeviceId()
         if (deviceId.isBlank()) return
         try {
-            postAuthenticated(
-                "/devices/push/register",
-                JSONObject().put("deviceId", deviceId).put("fcmToken", token)
-            )
+            postAuthenticated("/devices/push/register",
+                JSONObject().put("deviceId", deviceId).put("fcmToken", token))
         } catch (error: Exception) {
             Log.e(TAG, "FCM token registration failed; retry on next app launch", error)
         }
@@ -84,9 +82,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
                 connection.setRequestProperty("Authorization", "Bearer $accessToken")
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.setRequestProperty("Accept", "application/json")
-                connection.outputStream.use {
-                    it.write(payload.toString().toByteArray(Charsets.UTF_8))
-                }
+                connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
                 if (status !in 200..299) {
                     val body = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
