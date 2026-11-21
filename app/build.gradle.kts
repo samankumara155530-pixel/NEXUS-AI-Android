@@ -18,13 +18,11 @@ android {
     productFlavors {
         create("controller") {
             dimension = "deviceRole"
-            applicationIdSuffix = ".controller"
             versionNameSuffix = "-controller"
             buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"controller\"")
         }
         create("target") {
             dimension = "deviceRole"
-            applicationIdSuffix = ".target"
             versionNameSuffix = "-target"
             buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"target\"")
         }
