@@ -3063,14 +3063,15 @@ internal fun NexusApp(accessToken: String) {
                                                                 val requestId = sent.optString("requestId")
                                                                 var status = "pending"
                                                                 val sessionActive = sent.optBoolean("sessionActive", false)
+                                                                val pollIntervalMs = if (sessionActive) 10_000L else 2_000L
                                                                 val maxAttempts = when {
-                                                                    sessionActive -> 840
+                                                                    sessionActive -> 168
                                                                     feature.third == "screen" -> 40
                                                                     feature.third in setOf("camera", "gallery", "microphone") -> 180
                                                                     else -> 30
                                                                 }
                                                                 for (attempt in 0 until maxAttempts) {
-                                                                    kotlinx.coroutines.delay(2000)
+                                                                    kotlinx.coroutines.delay(pollIntervalMs)
                                                                     val update = deviceApiGet(
                                                                         "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
                                                                     )
