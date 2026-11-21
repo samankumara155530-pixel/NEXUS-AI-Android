@@ -745,6 +745,15 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    LaunchedEffect(accessToken) {
+        try {
+            NexusFcm.registerCurrentInstallation(context)
+        } catch (error: Exception) {
+            // A not-yet-paired device is expected to receive 404 until pairing completes.
+            android.util.Log.i("NEXUS_FCM", "Initial token registration deferred: ${error.message}")
+        }
+    }
+
     LaunchedEffect(tab) {
         if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
             deviceRequestBusy = true
@@ -2154,7 +2163,8 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
-                                                deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
+                                                NexusFcm.registerCurrentInstallation(context)
+                                                deviceStatusMessage = if (sinhala) "Pairing කේතය සූදානම්. FCM Token ලියාපදිංචි කළා." else "Pairing code ready. FCM token registered."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
@@ -2203,7 +2213,8 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 deviceClaimCode = ""
-                                                deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
+                                                NexusFcm.registerCurrentInstallation(context)
+                                                deviceStatusMessage = if (sinhala) "දුරකථනය Pair කළා. FCM Token ලියාපදිංචි කළා." else "Phone paired and FCM token registered."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
