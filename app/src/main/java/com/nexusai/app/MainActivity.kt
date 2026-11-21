@@ -706,6 +706,7 @@ internal fun NexusApp(accessToken: String) {
     var wakeStatusMessage by remember { mutableStateOf("") }
     var pendingRemoteRequestId by remember { mutableStateOf("") }
     var pendingRemoteFeature by remember { mutableStateOf("") }
+    var pendingRemoteRequiresApproval by remember { mutableStateOf(true) }
     var remoteSessionRequestId by remember {
         mutableStateOf(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString("remote_session_request_id", "").orEmpty())
@@ -1143,7 +1144,7 @@ internal fun NexusApp(accessToken: String) {
 
     LaunchedEffect(pendingRemoteRequestId, pendingRemoteFeature, remoteSessionExpiresAt) {
         if (isControllerBuild || pendingRemoteRequestId.isBlank() ||
-            pendingRemoteFeature == "session" ||
+            pendingRemoteRequiresApproval || pendingRemoteFeature == "session" ||
             remoteSessionExpiresAt <= System.currentTimeMillis()
         ) return@LaunchedEffect
 
@@ -1276,6 +1277,7 @@ internal fun NexusApp(accessToken: String) {
             while (true) {
                 val requestId = prefs.getString("pending_remote_request_id", "").orEmpty()
                 val feature = prefs.getString("pending_remote_feature", "").orEmpty()
+                val requiresApproval = prefs.getBoolean("pending_remote_requires_approval", true)
                 val createdAt = prefs.getLong("pending_remote_created_at", 0L)
                 val age = System.currentTimeMillis() - createdAt
                 if (requestId.isNotBlank() && feature.isNotBlank() &&
@@ -1283,12 +1285,15 @@ internal fun NexusApp(accessToken: String) {
                 ) {
                     pendingRemoteRequestId = requestId
                     pendingRemoteFeature = feature
+                    pendingRemoteRequiresApproval = requiresApproval
                 } else {
                     prefs.edit().remove("pending_remote_request_id")
                         .remove("pending_remote_feature")
+                        .remove("pending_remote_requires_approval")
                         .remove("pending_remote_created_at").apply()
                     pendingRemoteRequestId = ""
                     pendingRemoteFeature = ""
+                    pendingRemoteRequiresApproval = true
                 }
                 kotlinx.coroutines.delay(750)
             }
@@ -3785,7 +3790,7 @@ internal fun NexusApp(accessToken: String) {
         }
 
         if (!isControllerBuild && pendingRemoteRequestId.isNotBlank() &&
-            (pendingRemoteFeature == "session" || remoteSessionExpiresAt <= System.currentTimeMillis())
+            pendingRemoteRequiresApproval
         ) {
             val featureLabel = when (pendingRemoteFeature) {
                 "session" -> if (sinhala) "විනාඩි 30ක Remote Session" else "30-minute remote session"
@@ -3826,6 +3831,7 @@ internal fun NexusApp(accessToken: String) {
                                 remoteActionRequestId = if (feature == "session") "" else requestId
                                 pendingRemoteRequestId = ""
                                 pendingRemoteFeature = ""
+                                pendingRemoteRequiresApproval = true
                                 if (feature == "session") {
                                     val expiryText = approval.optJSONObject("request")?.optString("expires_at").orEmpty()
                                     val expiry = runCatching {
@@ -3857,6 +3863,7 @@ internal fun NexusApp(accessToken: String) {
                                 }
                                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                                     .remove("pending_remote_request_id").remove("pending_remote_feature")
+                                    .remove("pending_remote_requires_approval")
                                     .remove("pending_remote_created_at").apply()
                             } catch (error: Exception) {
                                 deviceStatusMessage = (error.message ?: "Could not approve remote request").take(160)
@@ -3884,6 +3891,7 @@ internal fun NexusApp(accessToken: String) {
                                     .remove("pending_remote_created_at").apply()
                                 pendingRemoteRequestId = ""
                                 pendingRemoteFeature = ""
+                                pendingRemoteRequiresApproval = true
                             }
                         }
                     }) { Text(if (sinhala) "ප්‍රතික්ෂේප කරන්න" else "Decline") }
