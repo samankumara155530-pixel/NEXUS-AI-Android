@@ -61,6 +61,9 @@ jobs:
           echo "$NEXUS_KEYSTORE_BASE64" | base64 --decode > app/nexus-upload-key.jks
           echo "NEXUS_KEYSTORE_PATH=nexus-upload-key.jks" >> "$GITHUB_ENV"
 
+      - name: Retry transient Maven dependency resolution
+        run: gradle --refresh-dependencies help --stacktrace
+
       - name: Build signed controller and target APKs
         env:
           NEXUS_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_KEYSTORE_PASSWORD }}
