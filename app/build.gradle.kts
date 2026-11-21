@@ -103,6 +103,7 @@ dependencies {
 
     // Background voice service support
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
