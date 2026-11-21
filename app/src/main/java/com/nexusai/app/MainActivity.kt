@@ -1031,6 +1031,7 @@ internal fun NexusApp(accessToken: String) {
         pendingCameraOutputUri = uri
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
             putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            clipData = ClipData.newRawUri("NEXUS photo output", uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
         if (intent.resolveActivity(context.packageManager) == null) {
@@ -1049,6 +1050,7 @@ internal fun NexusApp(accessToken: String) {
         pendingVideoOutputUri = uri
         val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
             putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            clipData = ClipData.newRawUri("NEXUS video output", uri)
             putExtra(MediaStore.EXTRA_DURATION_LIMIT, 30)
             putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0)
             putExtra(MediaStore.EXTRA_SIZE_LIMIT, REMOTE_MEDIA_MAX_BYTES.toLong())
