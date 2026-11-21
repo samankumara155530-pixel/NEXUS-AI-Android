@@ -8,6 +8,10 @@ on:
     branches:
       - feature/controller-target-fcm-permissions
 
+concurrency:
+  group: nexus-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
