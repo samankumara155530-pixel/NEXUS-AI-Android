@@ -5,6 +5,17 @@ import android.Manifest
 import android.content.*
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
+import android.net.Uri
+import android.os.Looper
+import android.media.projection.MediaProjectionManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.ByteArrayOutputStream
+import java.io.File
 import android.speech.RecognizerIntent
 import android.provider.MediaStore
 import android.provider.CalendarContract
@@ -37,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -78,7 +91,7 @@ private const val KEY_STABLE_DEVICE_ID = "stable_device_id"
  * Stable identifier for this app installation. It is generated once and kept
  * locally; it is not an IMEI, phone number, or hardware identifier.
  */
-private fun getStableDeviceId(context: Context): String {
+internal fun getStableDeviceId(context: Context): String {
     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     val existing = prefs.getString(KEY_STABLE_DEVICE_ID, null)
     if (!existing.isNullOrBlank()) return existing
@@ -88,8 +101,157 @@ private fun getStableDeviceId(context: Context): String {
 }
 
 
-private const val BACKEND_URL =
-    "https://nexus-ai-backend-six.vercel.app/chat"
+private val BACKEND_BASE_URL = BuildConfig.NEXUS_API_BASE_URL.trimEnd('/')
+private val BACKEND_URL = "$BACKEND_BASE_URL/chat"
+
+// Encode a small, consented preview so the Controller can retrieve the Target result.
+private fun bitmapToRemoteResult(source: Bitmap): JSONObject {
+    val ratio = minOf(1f, 480f / maxOf(source.width, source.height).toFloat())
+    val scaled = if (ratio < 1f) {
+        Bitmap.createScaledBitmap(
+            source,
+            (source.width * ratio).toInt().coerceAtLeast(1),
+            (source.height * ratio).toInt().coerceAtLeast(1),
+            true
+        )
+    } else source
+    val output = ByteArrayOutputStream()
+    var quality = 55
+    do {
+        output.reset()
+        scaled.compress(Bitmap.CompressFormat.JPEG, quality, output)
+        quality -= 10
+    } while (output.size() > 42_000 && quality >= 25)
+    return JSONObject()
+        .put("imageMimeType", "image/jpeg")
+        .put("imageJpegBase64", Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP))
+        .put("imageBytes", output.size())
+}
+
+private const val REMOTE_MEDIA_MAX_BYTES = 20 * 1024 * 1024
+
+private suspend fun remoteMediaUpload(
+    context: Context,
+    accessToken: String,
+    deviceId: String,
+    requestId: String,
+    mimeType: String,
+    fileName: String,
+    bytes: ByteArray
+): JSONObject = withContext(Dispatchers.IO) {
+    require(bytes.isNotEmpty()) { "Empty media file" }
+    require(bytes.size <= REMOTE_MEDIA_MAX_BYTES) { "Media file exceeds 20 MB limit" }
+    val token = NexusAuthManager.refreshAccessToken(context, accessToken)
+
+    fun postJson(path: String, payload: JSONObject): JSONObject {
+        val connection = URL("$BACKEND_BASE_URL/$path")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20000
+            connection.readTimeout = 30000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use {
+                it.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = JSONObject(body.ifBlank { "{}" })
+            if (status !in 200..299) {
+                throw IllegalStateException(json.optString("error", "Media API HTTP $status"))
+            }
+            return json
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    val upload = postJson(
+        "devices/remote/media/upload-url",
+        JSONObject()
+            .put("deviceId", deviceId)
+            .put("requestId", requestId)
+            .put("mimeType", mimeType)
+            .put("fileName", fileName)
+    )
+    val signedUrl = upload.optString("signedUrl")
+    require(signedUrl.startsWith("https://")) { "Invalid secure upload URL" }
+
+    val storageConnection = URL(signedUrl).openConnection() as HttpURLConnection
+    try {
+        storageConnection.requestMethod = "PUT"
+        storageConnection.connectTimeout = 20000
+        storageConnection.readTimeout = 180000
+        storageConnection.doOutput = true
+        storageConnection.setRequestProperty("Content-Type", mimeType)
+        storageConnection.setFixedLengthStreamingMode(bytes.size)
+        storageConnection.outputStream.use { it.write(bytes) }
+        val status = storageConnection.responseCode
+        if (status !in 200..299) {
+            val errorBody = storageConnection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            throw IllegalStateException("Secure media upload failed (HTTP $status): ${errorBody.take(160)}")
+        }
+    } finally {
+        storageConnection.disconnect()
+    }
+
+    postJson(
+        "devices/remote/media/complete",
+        JSONObject()
+            .put("deviceId", deviceId)
+            .put("requestId", requestId)
+            .put("sizeBytes", bytes.size)
+    )
+}
+
+private fun readRemoteMediaBytes(
+    context: Context,
+    uri: Uri,
+    mimeType: String
+): ByteArray {
+    val resolver = context.contentResolver
+    if (mimeType.startsWith("image/")) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            ?: throw IllegalStateException("Could not inspect selected image")
+        var sampleSize = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > 2400) {
+            sampleSize *= 2
+        }
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val source = resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, decodeOptions)
+        } ?: throw IllegalStateException("Could not read selected image")
+        val ratio = minOf(1f, 1920f / maxOf(source.width, source.height).toFloat())
+        val scaled = if (ratio < 1f) Bitmap.createScaledBitmap(
+            source,
+            (source.width * ratio).toInt().coerceAtLeast(1),
+            (source.height * ratio).toInt().coerceAtLeast(1),
+            true
+        ) else source
+        val output = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 88, output)
+        if (scaled !== source) scaled.recycle()
+        source.recycle()
+        return output.toByteArray()
+    }
+    return resolver.openInputStream(uri)?.use { input ->
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        var total = 0
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            total += count
+            require(total <= REMOTE_MEDIA_MAX_BYTES) { "Media file exceeds 20 MB limit" }
+            output.write(buffer, 0, count)
+        }
+        output.toByteArray()
+    } ?: throw IllegalStateException("Could not read selected media")
+}
 
 // MAIN ACTIVITY
 
@@ -101,6 +263,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             NexusRoot()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("target_ui_foreground", true).apply()
+    }
+
+    override fun onPause() {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean("target_ui_foreground", false).apply()
+        super.onPause()
     }
 }
 
@@ -290,6 +464,33 @@ internal fun NexusApp(accessToken: String) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isControllerBuild = BuildConfig.NEXUS_DEVICE_ROLE == "controller"
+
+    // Target must be allowed to show a visible receipt when a Wake arrives.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted && !isControllerBuild) {
+            Toast.makeText(
+                context,
+                "Wake දැනුම්දීම පෙන්වීමට Notifications අවසරය ලබා දෙන්න.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    LaunchedEffect(isControllerBuild) {
+        if (
+            !isControllerBuild &&
+            android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     var themeMode by remember {
         mutableStateOf(
@@ -507,9 +708,41 @@ internal fun NexusApp(accessToken: String) {
     var devicePairCode by remember { mutableStateOf("") }
     var deviceClaimCode by remember { mutableStateOf("") }
     var deviceStatusMessage by remember { mutableStateOf("") }
+    var fcmRegistrationStatus by remember { mutableStateOf("FCM පරීක්ෂා කර නැහැ.") }
     var deviceRequestBusy by remember { mutableStateOf(false) }
     val pairedDevices = remember { mutableStateListOf<JSONObject>() }
     var deviceListLoaded by remember { mutableStateOf(false) }
+    var wakeStatusMessage by remember { mutableStateOf("") }
+    var pendingRemoteRequestId by remember { mutableStateOf("") }
+    var pendingRemoteFeature by remember { mutableStateOf("") }
+    var pendingRemoteRequiresApproval by remember { mutableStateOf(true) }
+    var remoteSessionRequestId by remember {
+        mutableStateOf(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString("remote_session_request_id", "").orEmpty())
+    }
+    var remoteSessionExpiresAt by remember {
+        mutableStateOf(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong("remote_session_expires_at", 0L))
+    }
+    var remoteActionRequestId by remember { mutableStateOf("") }
+    var remoteActionResult by remember { mutableStateOf<JSONObject?>(null) }
+    var pendingCameraOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingVideoOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var showCameraModeDialog by remember { mutableStateOf(false) }
+    var remoteResultImageBase64 by remember { mutableStateOf("") }
+    var remoteResultMediaUrl by remember { mutableStateOf("") }
+    var remoteResultRequestId by remember { mutableStateOf("") }
+    var remoteResultMediaType by remember { mutableStateOf("") }
+    var remoteResultMimeType by remember { mutableStateOf("") }
+    var remoteResultMessage by remember { mutableStateOf("") }
+    val remoteResultPreviewBitmap = remember(remoteResultImageBase64) {
+        runCatching {
+            if (remoteResultImageBase64.isBlank()) null else {
+                val bytes = Base64.decode(remoteResultImageBase64, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }
+        }.getOrNull()
+    }
 
     var prompt by remember {
         mutableStateOf("")
@@ -621,46 +854,425 @@ internal fun NexusApp(accessToken: String) {
             ?.firstOrNull()
 
         if (!spoken.isNullOrBlank()) {
-
             when (tab) {
-
                 Tab.NOTES -> noteText = spoken
-
                 Tab.MEMORY -> memoryText = spoken
-
                 else -> prompt = spoken
+            }
+            if (remoteActionRequestId.isNotBlank()) {
+                remoteActionResult = JSONObject().put("transcript", spoken)
+            }
+        } else if (remoteActionRequestId.isNotBlank()) {
+            remoteActionResult = JSONObject().put("reason", "user_cancelled")
+        }
+    }
+
+    // TARGET SCREEN SHARE: Android always displays its own capture-consent dialog.
+    val screenCaptureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val requestId = remoteActionRequestId
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null && requestId.isNotBlank()) {
+            try {
+                val serviceIntent = Intent(context, NexusScreenCaptureService::class.java).apply {
+                    putExtra(NexusScreenCaptureService.EXTRA_RESULT_CODE, result.resultCode)
+                    putExtra(NexusScreenCaptureService.EXTRA_RESULT_DATA, result.data)
+                    putExtra(NexusScreenCaptureService.EXTRA_REQUEST_ID, requestId)
+                }
+                ContextCompat.startForegroundService(context, serviceIntent)
+                remoteActionRequestId = ""
+                deviceStatusMessage = if (sinhala) "අනුමත කළ තිර දර්ශනය Controller වෙත යවමින්..." else "Sending the approved screen preview to Controller..."
+            } catch (error: Exception) {
+                scope.launch {
+                    runCatching {
+                        NexusFcm.respondRemote(context, requestId, "failed", JSONObject().put("reason", "screen_service_start_failed"))
+                    }
+                }
+                remoteActionRequestId = ""
+                deviceStatusMessage = (error.message ?: "Screen capture could not start").take(140)
+            }
+        } else if (requestId.isNotBlank()) {
+            scope.launch {
+                runCatching {
+                    NexusFcm.respondRemote(context, requestId, "failed", JSONObject().put("reason", "screen_capture_permission_denied"))
+                }
+            }
+            remoteActionRequestId = ""
+            deviceStatusMessage = if (sinhala) "තිරය බෙදාගැනීමේ අවසරය ලබා දුන්නේ නැහැ." else "Screen sharing permission was not granted."
+        }
+    }
+
+    // CONSENTED CAMERA / VIDEO CAPTURE
+
+    fun createCaptureOutputUri(video: Boolean): Uri? {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "nexus_${System.currentTimeMillis()}.${if (video) "mp4" else "jpg"}")
+            put(MediaStore.MediaColumns.MIME_TYPE, if (video) "video/mp4" else "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, if (video) "Movies/NEXUS AI" else "Pictures/NEXUS AI")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+        return context.contentResolver.insert(
+            if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            values
+        )
+    }
+
+    fun finalizeCaptureUri(uri: Uri?, video: Boolean, keep: Boolean) {
+        if (uri == null) return
+        if (keep && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            runCatching { context.contentResolver.update(uri, values, null, null) }
+        } else if (!keep) {
+            runCatching { context.contentResolver.delete(uri, null, null) }
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val requestId = remoteActionRequestId
+        val outputUri = pendingCameraOutputUri
+        val outputHasData = outputUri != null && runCatching {
+            context.contentResolver.openFileDescriptor(outputUri, "r")?.use { it.statSize > 0 } == true
+        }.getOrDefault(false)
+        val uri = if (outputHasData) outputUri else result.data?.data ?: outputUri
+        pendingCameraOutputUri = null
+        if (requestId.isNotBlank()) {
+            if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) {
+                if (outputUri != null && outputUri != uri) finalizeCaptureUri(outputUri, false, false)
+                finalizeCaptureUri(uri, false, true)
+                scope.launch {
+                    try {
+                        val bytes = readRemoteMediaBytes(context, uri, "image/jpeg")
+                        remoteMediaUpload(context, accessToken, getStableDeviceId(context), requestId,
+                            "image/jpeg", "camera_photo.jpg", bytes)
+                        remoteActionRequestId = ""
+                        remoteActionResult = null
+                        deviceStatusMessage = if (sinhala) "ඡායාරූපය Controller වෙත ආරක්ෂිතව යැව්වා." else "Photo securely sent to Controller."
+                    } catch (error: Exception) {
+                        remoteActionResult = JSONObject().put("reason", error.message ?: "camera_photo_upload_failed")
+                    }
+                }
+            } else {
+                finalizeCaptureUri(uri, false, false)
+                if (outputUri != null && outputUri != uri) finalizeCaptureUri(outputUri, false, false)
+                remoteActionResult = JSONObject().put("reason", "camera_photo_cancelled_or_missing")
+            }
+        } else {
+            Toast.makeText(context, if (sinhala) "Camera වෙතින් ආපසු පැමිණියා." else "Returned from Camera.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val videoLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val requestId = remoteActionRequestId
+        val outputUri = pendingVideoOutputUri
+        val uri = if (outputUri != null && runCatching {
+            context.contentResolver.openFileDescriptor(outputUri, "r")?.use { it.statSize > 0 } == true
+        }.getOrDefault(false)) outputUri else result.data?.data ?: outputUri
+        pendingVideoOutputUri = null
+        if (requestId.isNotBlank()) {
+            if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) {
+                if (outputUri != null && outputUri != uri) finalizeCaptureUri(outputUri, true, false)
+                finalizeCaptureUri(uri, true, true)
+                scope.launch {
+                    try {
+                        val mime = context.contentResolver.getType(uri) ?: "video/mp4"
+                        val safeMime = if (mime in setOf("video/mp4", "video/3gpp", "video/webm", "video/quicktime")) mime else "video/mp4"
+                        val bytes = readRemoteMediaBytes(context, uri, safeMime)
+                        remoteMediaUpload(context, accessToken, getStableDeviceId(context), requestId,
+                            safeMime, "camera_video.${if (safeMime == "video/3gpp") "3gp" else if (safeMime == "video/webm") "webm" else if (safeMime == "video/quicktime") "mov" else "mp4"}", bytes)
+                        remoteActionRequestId = ""
+                        remoteActionResult = null
+                        deviceStatusMessage = if (sinhala) "ශබ්දය සමඟ වීඩියෝව Controller වෙත ආරක්ෂිතව යැව්වා." else "Video with audio securely sent to Controller."
+                    } catch (error: Exception) {
+                        remoteActionResult = JSONObject().put("reason", error.message ?: "camera_video_upload_failed")
+                    }
+                }
+            } else {
+                finalizeCaptureUri(outputUri, true, false)
+                remoteActionResult = JSONObject().put("reason", "camera_video_cancelled_or_missing")
             }
         }
     }
 
-    // CAMERA
-
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {
-
-        Toast.makeText(
-            context,
-            if (sinhala)
-                "Camera වෙතින් ආපසු පැමිණියා."
-            else
-                "Returned from Camera.",
-            Toast.LENGTH_SHORT
-        ).show()
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (remoteActionRequestId.isNotBlank()) {
+            if (uri != null) {
+                scope.launch {
+                    try {
+                        runCatching {
+                            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        val mime = context.contentResolver.getType(uri)?.lowercase()
+                            ?: throw IllegalStateException("Could not detect selected media type")
+                        val supported = mime.startsWith("image/") || mime in setOf(
+                            "video/mp4", "video/3gpp", "video/webm", "video/quicktime"
+                        )
+                        require(supported) { "Choose a supported photo or MP4/3GP/WebM/MOV video" }
+                        val uploadMime = if (mime.startsWith("image/")) "image/jpeg" else mime
+                        val bytes = readRemoteMediaBytes(context, uri, uploadMime)
+                        remoteMediaUpload(context, accessToken, getStableDeviceId(context),
+                            remoteActionRequestId, uploadMime, "gallery_media", bytes)
+                        remoteActionRequestId = ""
+                        remoteActionResult = null
+                        deviceStatusMessage = if (sinhala) "Gallery මාධ්‍යය Controller වෙත ආරක්ෂිතව යැව්වා." else "Gallery media securely sent to Controller."
+                    } catch (error: Exception) {
+                        remoteActionResult = JSONObject().put("reason", error.message ?: "gallery_upload_failed")
+                    }
+                }
+            } else {
+                remoteActionResult = JSONObject().put("reason", "gallery_selection_cancelled")
+            }
+        } else {
+            Toast.makeText(context, if (uri != null) {
+                if (sinhala) "Gallery මාධ්‍යය තෝරාගත්තා." else "Media selected from Gallery."
+            } else {
+                if (sinhala) "මාධ්‍යයක් තෝරා නැහැ." else "No media selected."
+            }, Toast.LENGTH_SHORT).show()
+        }
     }
 
-    val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        Toast.makeText(
-            context,
-            if (uri != null) {
-                if (sinhala) "Gallery ඡායාරූපය තෝරාගත්තා." else "Image selected from Gallery."
+    fun launchRemotePhotoCapture() {
+        val uri = createCaptureOutputUri(false)
+        if (uri == null) {
+            remoteActionResult = JSONObject().put("reason", "camera_output_uri_failed")
+            return
+        }
+        pendingCameraOutputUri = uri
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            clipData = ClipData.newRawUri("NEXUS photo output", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            finalizeCaptureUri(uri, false, false)
+            pendingCameraOutputUri = null
+            remoteActionResult = JSONObject().put("reason", "no_camera_app")
+        } else cameraLauncher.launch(intent)
+    }
+
+    fun launchRemoteVideoCapture() {
+        val uri = createCaptureOutputUri(true)
+        if (uri == null) {
+            remoteActionResult = JSONObject().put("reason", "video_output_uri_failed")
+            return
+        }
+        pendingVideoOutputUri = uri
+        val intent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            clipData = ClipData.newRawUri("NEXUS video output", uri)
+            putExtra(MediaStore.EXTRA_DURATION_LIMIT, 30)
+            putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 0)
+            putExtra(MediaStore.EXTRA_SIZE_LIMIT, REMOTE_MEDIA_MAX_BYTES.toLong())
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(context.packageManager) == null) {
+            finalizeCaptureUri(uri, true, false)
+            pendingVideoOutputUri = null
+            remoteActionResult = JSONObject().put("reason", "no_video_camera_app")
+        } else videoLauncher.launch(intent)
+    }
+
+    val remoteAudioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val requestId = remoteActionRequestId
+        if (granted && requestId.isNotBlank()) {
+            try {
+                val serviceIntent = Intent(context, NexusAudioRecordService::class.java).apply {
+                    action = NexusAudioRecordService.ACTION_START
+                    putExtra(NexusAudioRecordService.EXTRA_REQUEST_ID, requestId)
+                }
+                ContextCompat.startForegroundService(context, serviceIntent)
+                deviceStatusMessage = if (sinhala) "මයික්‍රෆෝනයෙන් තත්පර 30ක් දක්වා පටිගත කිරීම ආරම්භ කළා. Notification එකෙන් නතර කළ හැකියි." else "Microphone recording started for up to 30 seconds. Stop it from the notification."
+            } catch (error: Exception) {
+                remoteActionResult = JSONObject().put("reason", error.message ?: "audio_service_start_failed")
+            }
+        } else if (requestId.isNotBlank()) {
+            remoteActionResult = JSONObject().put("reason", "microphone_permission_denied")
+        }
+    }
+
+    fun launchRemoteAudioRecording() {
+        if (remoteActionRequestId.isBlank()) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                val serviceIntent = Intent(context, NexusAudioRecordService::class.java).apply {
+                    action = NexusAudioRecordService.ACTION_START
+                    putExtra(NexusAudioRecordService.EXTRA_REQUEST_ID, remoteActionRequestId)
+                }
+                ContextCompat.startForegroundService(context, serviceIntent)
+                deviceStatusMessage = if (sinhala) "මයික්‍රෆෝන පටිගත කිරීම ආරම්භ කළා. තත්පර 30කින් ස්වයංක්‍රීයව නවතී." else "Microphone recording started. It stops automatically after 30 seconds."
+            } catch (error: Exception) {
+                remoteActionResult = JSONObject().put("reason", error.message ?: "audio_service_start_failed")
+            }
+        } else {
+            remoteAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // Deliver completed microphone recordings to the paired Controller.
+    // Keep the Target's temporary file until the private-storage upload is acknowledged.
+    LaunchedEffect(remoteActionRequestId, remoteSessionExpiresAt, isControllerBuild) {
+        if (isControllerBuild || remoteActionRequestId.isBlank()) return@LaunchedEffect
+        val requestId = remoteActionRequestId
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        while (remoteActionRequestId == requestId &&
+            remoteSessionExpiresAt > System.currentTimeMillis()) {
+            val resultId = prefs.getString("remote_audio_result_request_id", "").orEmpty()
+            val resultPath = prefs.getString("remote_audio_result_path", "").orEmpty()
+            val resultError = prefs.getString("remote_audio_result_error", "").orEmpty()
+            if (resultId == requestId && resultPath.isNotBlank()) {
+                val file = File(resultPath)
+                try {
+                    require(file.isFile && file.length() in 1..REMOTE_MEDIA_MAX_BYTES.toLong()) {
+                        "Recording file missing or exceeds 20 MB"
+                    }
+                    val mimeType = prefs.getString("remote_audio_result_mime", "audio/mp4")
+                        .orEmpty().ifBlank { "audio/mp4" }
+                    val uploaded = remoteMediaUpload(
+                        context = context,
+                        accessToken = accessToken,
+                        deviceId = getStableDeviceId(context),
+                        requestId = requestId,
+                        mimeType = mimeType,
+                        fileName = "nexus_audio_recording.m4a",
+                        bytes = withContext(Dispatchers.IO) { file.readBytes() }
+                    )
+                    require(uploaded.optBoolean("success", false)) {
+                        "Controller media delivery was not acknowledged"
+                    }
+                    // Delete only after the backend confirms the private upload and completion.
+                    file.delete()
+                    prefs.edit()
+                        .remove("remote_audio_result_request_id")
+                        .remove("remote_audio_result_path")
+                        .remove("remote_audio_result_size")
+                        .remove("remote_audio_result_mime")
+                        .remove("remote_audio_result_reason")
+                        .remove("remote_audio_result_error")
+                        .apply()
+                    remoteActionResult = JSONObject()
+                        .put("mediaType", "audio")
+                        .put("mediaMimeType", mimeType)
+                    remoteActionRequestId = ""
+                    deviceStatusMessage = if (sinhala) {
+                        "හඬ පටිගත කිරීම ආරක්ෂිතව Controller වෙත යැවුවා."
+                    } else {
+                        "Audio recording securely delivered to Controller."
+                    }
+                    break
+                } catch (error: Exception) {
+                    deviceStatusMessage = (error.message ?: "Audio upload failed").take(140)
+                    // Keep the local temporary file for an explicit retry or session cleanup.
+                    remoteActionResult = JSONObject().put("reason", "audio_delivery_failed")
+                    remoteActionRequestId = ""
+                    break
+                }
+            } else if (resultId == requestId && resultError.isNotBlank()) {
+                remoteActionResult = JSONObject().put("reason", resultError)
+                remoteActionRequestId = ""
+                break
+            }
+            kotlinx.coroutines.delay(500)
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val provider = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+            if (provider == null) {
+                remoteActionResult = JSONObject().put("reason", "location_provider_disabled")
             } else {
-                if (sinhala) "ඡායාරූපයක් තෝරා නැහැ." else "No image selected."
-            },
-            Toast.LENGTH_SHORT
-        ).show()
+                try {
+                    val listener = object : LocationListener {
+                        override fun onLocationChanged(location: Location) {
+                            runCatching { manager.removeUpdates(this) }
+                            remoteActionResult = JSONObject()
+                                .put("latitude", location.latitude)
+                                .put("longitude", location.longitude)
+                                .put("accuracyMeters", location.accuracy.toDouble())
+                                .put("capturedAt", location.time)
+                        }
+                        @Deprecated("Deprecated in Android")
+                        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                        override fun onProviderEnabled(provider: String) {}
+                        override fun onProviderDisabled(provider: String) {
+                            remoteActionResult = JSONObject().put("reason", "location_provider_disabled")
+                        }
+                    }
+                    manager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+                } catch (error: SecurityException) {
+                    remoteActionResult = JSONObject().put("reason", "location_permission_denied")
+                } catch (error: Exception) {
+                    remoteActionResult = JSONObject().put("reason", error.message ?: "location_failed")
+                }
+            }
+        } else {
+            remoteActionResult = JSONObject().put("reason", "location_permission_denied")
+        }
+    }
+
+    LaunchedEffect(pendingRemoteRequestId, pendingRemoteFeature, remoteSessionExpiresAt, pendingRemoteRequiresApproval) {
+        if (isControllerBuild || pendingRemoteRequestId.isBlank() ||
+            pendingRemoteRequiresApproval || pendingRemoteFeature == "session" ||
+            remoteSessionExpiresAt <= System.currentTimeMillis()
+        ) return@LaunchedEffect
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val sessionId = prefs.getString("remote_session_request_id", "").orEmpty()
+        val sessionExpiry = prefs.getLong("remote_session_expires_at", 0L)
+        if (sessionId != remoteSessionRequestId || sessionExpiry <= System.currentTimeMillis()) {
+            return@LaunchedEffect
+        }
+        // If Android has the Target app in the background, wait until the user
+        // brings it forward. Background activity launches are intentionally avoided.
+        while (!prefs.getBoolean("target_ui_foreground", false)) {
+            if (prefs.getLong("remote_session_expires_at", 0L) <= System.currentTimeMillis()) {
+                return@LaunchedEffect
+            }
+            kotlinx.coroutines.delay(500)
+        }
+
+        val requestId = pendingRemoteRequestId
+        val feature = pendingRemoteFeature
+        remoteActionRequestId = requestId
+        pendingRemoteRequestId = ""
+        pendingRemoteFeature = ""
+        prefs.edit().remove("pending_remote_request_id")
+            .remove("pending_remote_feature").remove("pending_remote_created_at").apply()
+
+        try {
+            when (feature) {
+                "camera" -> showCameraModeDialog = true
+                "gallery" -> galleryLauncher.launch(arrayOf("image/*", "video/*"))
+                "microphone" -> launchRemoteAudioRecording()
+                "screen" -> {
+                    val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                    screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
+                }
+                "location" -> locationPermissionLauncher.launch(
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                )
+            }
+        } catch (error: Exception) {
+            remoteActionResult = JSONObject().put("reason", error.message ?: "remote_action_launch_failed")
+        }
     }
 
     // COPY
@@ -690,7 +1302,7 @@ internal fun NexusApp(accessToken: String) {
         payload: JSONObject
     ): JSONObject = withContext(Dispatchers.IO) {
         val connection = (
-            URL("https://nexus-ai-backend-six.vercel.app/$route")
+            URL("$BACKEND_BASE_URL/$route")
                 .openConnection() as HttpURLConnection
         )
         try {
@@ -718,7 +1330,7 @@ internal fun NexusApp(accessToken: String) {
 
     suspend fun deviceApiGet(route: String): JSONObject = withContext(Dispatchers.IO) {
         val connection = (
-            URL("https://nexus-ai-backend-six.vercel.app/$route")
+            URL("$BACKEND_BASE_URL/$route")
                 .openConnection() as HttpURLConnection
         )
         try {
@@ -740,6 +1352,82 @@ internal fun NexusApp(accessToken: String) {
             json
         } finally {
             connection.disconnect()
+        }
+    }
+
+    LaunchedEffect(isControllerBuild) {
+        if (!isControllerBuild) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            // Keep the Target approval prompt in sync even when FCM arrives while
+            // MainActivity is already open; a one-shot read misses that event.
+            while (true) {
+                val requestId = prefs.getString("pending_remote_request_id", "").orEmpty()
+                val feature = prefs.getString("pending_remote_feature", "").orEmpty()
+                val requiresApproval = prefs.getBoolean("pending_remote_requires_approval", true)
+                val createdAt = prefs.getLong("pending_remote_created_at", 0L)
+                val age = System.currentTimeMillis() - createdAt
+                val maxPendingAge = if (requiresApproval) 120_000L else 29 * 60 * 1000L
+                if (requestId.isNotBlank() && feature.isNotBlank() &&
+                    createdAt > 0L && age in 0L..maxPendingAge
+                ) {
+                    pendingRemoteRequestId = requestId
+                    pendingRemoteFeature = feature
+                    pendingRemoteRequiresApproval = requiresApproval
+                } else {
+                    prefs.edit().remove("pending_remote_request_id")
+                        .remove("pending_remote_feature")
+                        .remove("pending_remote_requires_approval")
+                        .remove("pending_remote_created_at").apply()
+                    pendingRemoteRequestId = ""
+                    pendingRemoteFeature = ""
+                    pendingRemoteRequiresApproval = true
+                }
+                kotlinx.coroutines.delay(750)
+            }
+        }
+    }
+
+    LaunchedEffect(remoteActionRequestId, remoteActionResult) {
+        val requestId = remoteActionRequestId
+        val result = remoteActionResult
+        if (requestId.isNotBlank() && result != null) {
+            try {
+                deviceApiPost(
+                    "devices/remote/respond",
+                    JSONObject()
+                        .put("deviceId", getStableDeviceId(context))
+                        .put("requestId", requestId)
+                        .put(
+                            "status",
+                            if (
+                                result.has("reason") ||
+                                result.optString("cameraResult") == "cancelled_or_no_thumbnail" ||
+                                result.optString("gallerySelection") == "cancelled"
+                            ) "failed" else "completed"
+                        )
+                        .put("result", result)
+                )
+            } catch (error: Exception) {
+                android.util.Log.e("NEXUS_REMOTE", "Could not submit remote action result", error)
+            } finally {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                    .remove("pending_remote_request_id").remove("pending_remote_feature")
+                    .remove("pending_remote_created_at").apply()
+                remoteActionRequestId = ""
+                remoteActionResult = null
+                pendingRemoteRequestId = ""
+                pendingRemoteFeature = ""
+            }
+        }
+    }
+
+    LaunchedEffect(accessToken) {
+        try {
+            NexusFcm.registerCurrentInstallation(context, accessToken)
+            fcmRegistrationStatus = if (sinhala) "FCM Token: සේවාදායකයේ ලියාපදිංචි වී ඇත." else "FCM token: registered on server."
+        } catch (error: Exception) {
+            fcmRegistrationStatus = if (sinhala) "FCM Token ලියාපදිංචිය අසාර්ථකයි: ${error.message}" else "FCM registration failed: ${error.message}"
+            android.util.Log.e("NEXUS_FCM", "Initial token registration failed", error)
         }
     }
 
@@ -2138,6 +2826,7 @@ internal fun NexusApp(accessToken: String) {
                                         "Sign in with the same NEXUS account on your second phone and use the pairing code. Codes expire after 5 minutes.",
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                if (isControllerBuild) {
                                 Button(
                                     enabled = !deviceRequestBusy,
                                     onClick = {
@@ -2151,7 +2840,9 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
-                                                deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
+                                                NexusFcm.registerCurrentInstallation(context, accessToken)
+                                                fcmRegistrationStatus = if (sinhala) "FCM Token: සේවාදායකයේ ලියාපදිංචි වී ඇත." else "FCM token registered on server."
+                                                deviceStatusMessage = if (sinhala) "Pairing කේතය සූදානම්." else "Pairing code ready."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
@@ -2177,6 +2868,8 @@ internal fun NexusApp(accessToken: String) {
                                         Text(if (sinhala) "කේතය Copy කරන්න" else "Copy code")
                                     }
                                 }
+                                }
+                                if (!isControllerBuild) {
                                 OutlinedTextField(
                                     value = deviceClaimCode,
                                     onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
@@ -2198,7 +2891,9 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 deviceClaimCode = ""
-                                                deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
+                                                NexusFcm.registerCurrentInstallation(context, accessToken)
+                                                fcmRegistrationStatus = if (sinhala) "FCM Token: සේවාදායකයේ ලියාපදිංචි වී ඇත." else "FCM token registered on server."
+                                                deviceStatusMessage = if (sinhala) "දුරකථනය Pair කළා." else "Phone paired."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
@@ -2211,12 +2906,16 @@ internal fun NexusApp(accessToken: String) {
                                 ) {
                                     Text(if (sinhala) "මෙම දුරකථනය Pair කරන්න" else "Pair this phone")
                                 }
+                                }
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
                                 }
+                                Text(fcmRegistrationStatus, color = MaterialTheme.colorScheme.secondary,
+                                    style = MaterialTheme.typography.bodySmall)
                             }
                         }
 
+                        if (isControllerBuild) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(22.dp)
@@ -2277,6 +2976,7 @@ internal fun NexusApp(accessToken: String) {
                                     )
                                 } else {
                                     val uniqueDevices = pairedDevices
+                                        .filter { device -> !isControllerBuild || device.optString("device_role") == "target" }
                                         .groupBy { device ->
                                             val stableId = device.optString("device_id").ifBlank {
                                                 device.optString("deviceId")
@@ -2318,6 +3018,16 @@ internal fun NexusApp(accessToken: String) {
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.secondary)
                                                 }
+                                                val fcmRegistered = device.optString("fcm_status") == "registered"
+                                                Text(
+                                                    if (fcmRegistered) {
+                                                        if (sinhala) "FCM Token: ලියාපදිංචි" else "FCM token: registered"
+                                                    } else {
+                                                        if (sinhala) "FCM Token: ලියාපදිංචි නැහැ" else "FCM token: not registered"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (fcmRegistered) Color(0xFF35B779) else MaterialTheme.colorScheme.error
+                                                )
                                             }
                                             Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
                                                 tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
@@ -2331,19 +3041,172 @@ internal fun NexusApp(accessToken: String) {
                                         )
                                     }
                                 }
+                                val activeTarget = pairedDevices.firstOrNull {
+                                    it.optString("device_role") == "target" &&
+                                        it.optString("fcm_status") == "registered" &&
+                                        (it.isNull("revoked_at") || it.optString("revoked_at") == "null")
+                                }
+                                Button(
+                                    enabled = !deviceRequestBusy && activeTarget != null,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = {
+                                        scope.launch {
+                                            deviceRequestBusy = true
+                                            wakeStatusMessage = if (sinhala) "Wake පණිවිඩය යවමින්..." else "Sending wake request..."
+                                            try {
+                                                val targetId = activeTarget?.optString("device_id").orEmpty()
+                                                val sent = deviceApiPost(
+                                                    "devices/" + targetId + "/push/wake",
+                                                    JSONObject().put("controllerDeviceId", getStableDeviceId(context))
+                                                )
+                                                val requestId = sent.optString("requestId")
+                                                wakeStatusMessage = if (sinhala) "FCM වෙත යැවුවා. Target ලැබීම තහවුරු කරමින්..." else "Accepted by FCM. Checking target receipt..."
+                                                var deliveryStatus = "sent"
+                                                for (attempt in 0 until 8) {
+                                                    kotlinx.coroutines.delay(1500)
+                                                    val status = deviceApiGet(
+                                                        "devices/" + targetId + "/push/status?controllerDeviceId=" +
+                                                            getStableDeviceId(context) + "&requestId=" + requestId
+                                                    )
+                                                    deliveryStatus = status.optJSONObject("delivery")?.optString("status", "sent") ?: "sent"
+                                                    if (deliveryStatus == "received" || deliveryStatus == "processed" || deliveryStatus == "failed") break
+                                                }
+                                                wakeStatusMessage = when (deliveryStatus) {
+                                                    "received", "processed" -> if (sinhala) "Target දුරකථනයට Wake පණිවිඩය ලැබුණා." else "Target phone received the wake message."
+                                                    "failed" -> if (sinhala) "Wake යැවීම අසාර්ථකයි." else "Wake delivery failed."
+                                                    else -> if (sinhala) "FCM වෙත යවා ඇත; Target ලැබුණු බව තවම තහවුරු නැහැ." else "FCM accepted it; target receipt is not confirmed."
+                                                }
+                                            } catch (e: Exception) {
+                                                wakeStatusMessage = (e.message ?: "Wake failed").take(140)
+                                            } finally {
+                                                deviceRequestBusy = false
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.PowerSettingsNew, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (sinhala) "Target Wake පරීක්ෂා කරන්න" else "Wake Target")
+                                }
+                                if (wakeStatusMessage.isNotBlank()) {
+                                    Text(wakeStatusMessage, color = MaterialTheme.colorScheme.secondary)
+                                }
                                 Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
                                 val remoteFeatures = listOf(
+                                    Triple(Icons.Default.LockOpen, if (sinhala) "Session අනුමැතිය" else "Approve Session", "session"),
                                     Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
                                     Triple(Icons.Default.Mic, if (sinhala) "මයික්" else "Microphone", "microphone"),
                                     Triple(Icons.Default.PhotoLibrary, if (sinhala) "ගැලරිය" else "Gallery", "gallery"),
-                                    Triple(Icons.Default.LocationOn, if (sinhala) "ස්ථානය" else "Location", "location")
+                                    Triple(Icons.Default.LocationOn, if (sinhala) "ස්ථානය" else "Location", "location"),
+                                    Triple(Icons.Default.Cast, if (sinhala) "තිරය" else "Screen", "screen")
                                 )
                                 remoteFeatures.chunked(2).forEach { rowFeatures ->
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                         rowFeatures.forEach { feature ->
                                             OutlinedButton(
-                                                onClick = { deviceStatusMessage = if (sinhala) "මෙම පහසුකම තවම සකස් කරමින් පවතී." else "${feature.second} remote access is not available yet." },
-                                                enabled = false,
+                                                onClick = {
+                                                    val targetId = activeTarget?.optString("device_id").orEmpty()
+                                                    if (targetId.isBlank()) {
+                                                        deviceStatusMessage = if (sinhala) "සක්‍රිය Target දුරකථනයක් නැහැ." else "No active Target phone."
+                                                    } else {
+                                                        scope.launch {
+                                                            deviceRequestBusy = true
+                                                            remoteResultMediaUrl = ""
+                                                            remoteResultRequestId = ""
+                                                            remoteResultMediaType = ""
+                                                            remoteResultMimeType = ""
+                                                            if (feature.third == "screen") {
+                                                                remoteResultImageBase64 = ""
+                                                                remoteResultMessage = ""
+                                                            }
+                                                            deviceStatusMessage = if (sinhala) "${feature.second} අවසර ඉල්ලීම යවමින්..." else "Sending ${feature.second} approval request..."
+                                                            try {
+                                                                val sent = deviceApiPost(
+                                                                    "devices/$targetId/remote/request",
+                                                                    JSONObject()
+                                                                        .put("controllerDeviceId", getStableDeviceId(context))
+                                                                        .put("feature", feature.third)
+                                                                )
+                                                                val requestId = sent.optString("requestId")
+                                                                var status = "pending"
+                                                                val sessionActive = sent.optBoolean("sessionActive", false)
+                                                                val pollIntervalMs = if (sessionActive) 10_000L else 2_000L
+                                                                val maxAttempts = when {
+                                                                    sessionActive -> 174
+                                                                    feature.third == "screen" -> 40
+                                                                    feature.third in setOf("camera", "gallery", "microphone") -> 180
+                                                                    else -> 30
+                                                                }
+                                                                for (attempt in 0 until maxAttempts) {
+                                                                    kotlinx.coroutines.delay(pollIntervalMs)
+                                                                    val update = deviceApiGet(
+                                                                        "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
+                                                                    )
+                                                                    val request = update.optJSONObject("request")
+                                                                    status = request?.optString("status", "pending") ?: "pending"
+                                                                    val liveResult = request?.optJSONObject("result") ?: JSONObject()
+                                                                    if (feature.third == "session" && status == "approved") {
+                                                                        val expiry = request?.optString("expires_at").orEmpty()
+                                                                        deviceStatusMessage = if (sinhala) {
+                                                                            "Target අනුමැතිය ලබා දුන්නා. Remote Session එක විනාඩි 30ක් සක්‍රියයි."
+                                                                        } else {
+                                                                            "Target approved. Remote session is active for 30 minutes."
+                                                                        }
+                                                                        remoteResultMessage = expiry
+                                                                        break
+                                                                    }
+                                                                    if (status == "expired") {
+                                                                        deviceStatusMessage = if (sinhala) "Remote Session එක කල් ඉකුත් වී හෝ නතර කර ඇත." else "Remote session expired or was stopped."
+                                                                        break
+                                                                    }
+                                                                    if (feature.third == "screen" && liveResult.optString("screenCapture") == "live_frame") {
+                                                                        val frame = liveResult.optString("imageJpegBase64", "")
+                                                                        if (frame.isNotBlank()) {
+                                                                            remoteResultImageBase64 = frame
+                                                                            remoteResultMessage = if (sinhala) "Target තිරය සජීවීව ලැබෙමින් පවතී…" else "Live screen preview updating from Target…"
+                                                                        }
+                                                                    }
+                                                                    if (status == "completed") {
+                                                                        val result = liveResult
+                                                                        remoteResultImageBase64 = result.optString("imageJpegBase64", remoteResultImageBase64)
+                                                                        remoteResultMediaUrl = request?.optString("mediaUrl").orEmpty()
+                                                                        remoteResultRequestId = requestId
+                                                                        remoteResultMediaType = result.optString("mediaType")
+                                                                        remoteResultMimeType = result.optString("mediaMimeType")
+                                                                        remoteResultMessage = when {
+                                                                            remoteResultMediaUrl.isNotBlank() && remoteResultMediaType == "image" -> if (sinhala) "Target ඡායාරූපය ලැබුණා." else "Photo received from Target."
+                                                                            remoteResultMediaUrl.isNotBlank() && remoteResultMediaType == "video" -> if (sinhala) "ශබ්දය සහිත වීඩියෝව ලැබුණා." else "Video with audio received from Target."
+                                                                            remoteResultMediaUrl.isNotBlank() && remoteResultMediaType == "audio" -> if (sinhala) "හඬ පටිගත කිරීම ලැබුණා." else "Audio recording received from Target."
+                                                                            result.has("transcript") -> result.optString("transcript")
+                                                                            result.has("latitude") -> "Location: ${result.optDouble("latitude")}, ${result.optDouble("longitude")}"
+                                                                            result.optString("cameraResult") == "captured" -> "Camera preview received from Target."
+                                                                            result.optString("gallerySelection") == "selected" -> "Gallery preview received from Target."
+                                                                            result.has("screenCapture") -> if (sinhala) "Target තිරය බෙදාගැනීම අවසන්. අවසන් දර්ශනය මෙහි ඇත." else "Target screen sharing ended. Latest frame is shown."
+                                                                            else -> "Target action completed."
+                                                                        }
+                                                                        deviceStatusMessage = if (sinhala) "${feature.second} ප්‍රතිඵලය Target වෙතින් ලැබුණා." else "${feature.second} result received from Target."
+                                                                        break
+                                                                    }
+                                                                    if (status == "declined" || status == "failed") {
+                                                                        deviceStatusMessage = when (status) {
+                                                                            "declined" -> if (sinhala) "Target පරිශීලකයා ඉල්ලීම ප්‍රතික්ෂේප කළා." else "Target user declined the request."
+                                                                            else -> if (sinhala) "${feature.second} ක්‍රියාව අසාර්ථකයි." else "${feature.second} action failed."
+                                                                        }
+                                                                        break
+                                                                    }
+                                                                }
+                                                                if ((status == "pending" || status == "approved") && feature.third != "session") {
+                                                                    deviceStatusMessage = if (sinhala) "Target වෙත අවසර ඉල්ලීම යවා ඇත. Target දුරකථනයේ අනුමැතිය බලාපොරොත්තු වේ." else "Request sent. Waiting for approval/action on Target phone."
+                                                                }
+                                                            } catch (error: Exception) {
+                                                                deviceStatusMessage = (error.message ?: "Remote request failed").take(160)
+                                                            } finally {
+                                                                deviceRequestBusy = false
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                enabled = !deviceRequestBusy && activeTarget != null,
                                                 modifier = Modifier.weight(1f)
                                             ) {
                                                 Icon(feature.first, null)
@@ -2354,12 +3217,67 @@ internal fun NexusApp(accessToken: String) {
                                         if (rowFeatures.size == 1) Spacer(Modifier.weight(1f))
                                     }
                                 }
+                                if (remoteResultMessage.isNotBlank()) {
+                                    Text(remoteResultMessage, color = MaterialTheme.colorScheme.secondary)
+                                    if (remoteResultPreviewBitmap != null) {
+                                        Image(
+                                            bitmap = remoteResultPreviewBitmap,
+                                            contentDescription = "Consent-approved Target image preview",
+                                            modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
+                                        )
+                                    }
+                                    if (remoteResultMediaUrl.isNotBlank()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    try {
+                                                        val targetId = activeTarget?.optString("device_id").orEmpty()
+                                                        val refreshedUrl = if (targetId.isNotBlank() && remoteResultRequestId.isNotBlank()) {
+                                                            val latest = deviceApiGet(
+                                                                "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$remoteResultRequestId"
+                                                            )
+                                                            latest.optJSONObject("request")?.optString("mediaUrl").orEmpty()
+                                                        } else remoteResultMediaUrl
+                                                        require(refreshedUrl.startsWith("https://")) { "Media link expired or unavailable" }
+                                                        remoteResultMediaUrl = refreshedUrl
+                                                        val mediaIntent = Intent(Intent.ACTION_VIEW).apply {
+                                                            setDataAndType(Uri.parse(refreshedUrl), remoteResultMimeType.ifBlank { "*/*" })
+                                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                        }
+                                                        context.startActivity(Intent.createChooser(mediaIntent, if (sinhala) "NEXUS මාධ්‍යය විවෘත කරන්න" else "Open NEXUS media"))
+                                                    } catch (error: Exception) {
+                                                        deviceStatusMessage = if (sinhala) "මාධ්‍ය සබැඳිය යාවත්කාලීන කර විවෘත කළ නොහැක." else "Could not refresh or open this media link."
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(
+                                                when (remoteResultMediaType) {
+                                                    "video" -> Icons.Default.PlayCircle
+                                                    "audio" -> Icons.Default.VolumeUp
+                                                    else -> Icons.Default.Image
+                                                },
+                                                null
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                when (remoteResultMediaType) {
+                                                    "video" -> if (sinhala) "වීඩියෝව බලන්න / ශබ්දය අහන්න" else "Play video with audio"
+                                                    "audio" -> if (sinhala) "හඬ පටිගත කිරීම අහන්න" else "Play audio recording"
+                                                    else -> if (sinhala) "ඡායාරූපය බලන්න" else "View photo"
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                                 Text(
-                                    if (sinhala) "මෙය සම්බන්ධ කළ උපාංග ලැයිස්තුවයි. Remote Screen පාලනය තවම සක්‍රිය කර නැත." else "This is your paired-device list. Remote screen control is not enabled yet.",
+                                    if (sinhala) "Screen බොත්තමෙන් Target පරිශීලකයාගේ අවසරය ලබාගෙන තත්පර 60ක් දක්වා අඩු frame-rate තිර දර්ශනයක් බලන්න. Touch control තවම නැත." else "Screen requests a consent-approved low-frame-rate Target screen view for up to 60 seconds. Remote touch control is not implemented.",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary
                                 )
                             }
+                        }
                         }
 
                         OutlinedTextField(
@@ -2470,12 +3388,12 @@ internal fun NexusApp(accessToken: String) {
                         Spacer(Modifier.height(10.dp))
 
                         ToolCard(
-                            title = if (sinhala) "Gallery වෙතින් ඡායාරූපයක් තෝරන්න" else "Choose from Gallery",
-                            description = if (sinhala) "දුරකථනයේ Gallery එකෙන් ඡායාරූපයක් තෝරන්න." else "Select an image from your phone's Gallery.",
+                            title = if (sinhala) "Gallery වෙතින් මාධ්‍යයක් තෝරන්න" else "Choose media from Gallery",
+                            description = if (sinhala) "දුරකථනයේ Gallery එකෙන් ඡායාරූපයක් හෝ වීඩියෝවක් තෝරන්න." else "Select a photo or video from your phone's Gallery.",
                             icon = Icons.Default.PhotoLibrary
                         ) {
                             try {
-                                galleryLauncher.launch("image/*")
+                                galleryLauncher.launch(arrayOf("image/*", "video/*"))
                             } catch (_: Exception) {
                                 Toast.makeText(
                                     context,
@@ -2508,13 +3426,14 @@ internal fun NexusApp(accessToken: String) {
                             Triple(if (sinhala) "Background Connection Service" else "Background Connection Service", if (sinhala) "Backend heartbeat පසු" else "After backend heartbeat", false),
                             Triple(if (sinhala) "Remote Camera සහ Photo Capture" else "Remote Camera and Photo Capture", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
                             Triple(if (sinhala) "Independent Remote Microphone" else "Independent Remote Microphone", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
-                            Triple(if (sinhala) "Screen Sharing / Remote Control" else "Screen Sharing / Remote Control", if (sinhala) "සැලසුම් අදියර" else "Planned", false),
+                            Triple(if (sinhala) "Remote Screen Sharing" else "Remote Screen Sharing", if (sinhala) "අනුමැතියෙන් 60s අඩු frame-rate screen view එක් කළා; touch control ඉතිරියි" else "Consented 60s low-frame-rate screen view added; touch control remains", false),
                             Triple(if (sinhala) "Gallery / Files / Location / Notifications" else "Gallery / Files / Location / Notifications", if (sinhala) "සැලසුම් අදියර" else "Planned", false)
                         )
                         val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
                         val completed = remember {
                             mutableStateListOf<Int>().apply {
                                 addAll(roadmapPrefs.getStringSet("completed_items", emptySet())
+                                    .orEmpty()
                                     .mapNotNull { it.toIntOrNull() }
                                     .filter { it in roadmap.indices })
                             }
@@ -2598,6 +3517,78 @@ internal fun NexusApp(accessToken: String) {
                             else
                                 "NEXUS Settings"
                         )
+
+                        if (!isControllerBuild && remoteSessionExpiresAt > System.currentTimeMillis()) {
+                            Card(
+                                Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                            ) {
+                                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(if (sinhala) "Remote Session සක්‍රියයි" else "Remote Session Active", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (sinhala) "Controller දුරකථනයට ලබාදුන් අවසරය තවමත් සක්‍රියයි. අවශ්‍ය නම් මෙතැනින් නතර කරන්න."
+                                        else "The approved Controller session is still active. You can stop it here at any time."
+                                    )
+                                    OutlinedButton(
+                                        onClick = {
+                                            scope.launch {
+                                                try {
+                                                    deviceApiPost(
+                                                        "devices/remote/session/stop",
+                                                        JSONObject()
+                                                            .put("deviceId", getStableDeviceId(context))
+                                                            .put("requestId", remoteSessionRequestId)
+                                                    )
+                                                    // Remove a completed-but-unuploaded recording before cancelling any active recorder.
+                                                    val audioResultPath = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                                        .getString("remote_audio_result_path", "").orEmpty()
+                                                    if (audioResultPath.isNotBlank()) runCatching { File(audioResultPath).delete() }
+                                                    // Stop any active microphone/screen capture immediately.
+                                                    runCatching {
+                                                        context.startService(
+                                                            Intent(context, NexusAudioRecordService::class.java).apply {
+                                                                action = NexusAudioRecordService.ACTION_CANCEL
+                                                            }
+                                                        )
+                                                    }
+                                                    runCatching {
+                                                        context.stopService(Intent(context, NexusScreenCaptureService::class.java))
+                                                    }
+                                                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                                                        .remove("remote_session_request_id")
+                                                        .remove("remote_session_expires_at")
+                                                        .remove("remote_audio_active_request_id")
+                                                        .remove("remote_audio_result_request_id")
+                                                        .remove("remote_audio_result_path")
+                                                        .remove("remote_audio_result_size")
+                                                        .remove("remote_audio_result_mime")
+                                                        .remove("remote_audio_result_error")
+                                                        .remove("pending_remote_request_id")
+                                                        .remove("pending_remote_feature")
+                                                        .remove("pending_remote_requires_approval")
+                                                        .remove("pending_remote_created_at")
+                                                        .apply()
+                                                    pendingRemoteRequestId = ""
+                                                    pendingRemoteFeature = ""
+                                                    pendingRemoteRequiresApproval = true
+                                                    remoteSessionRequestId = ""
+                                                    remoteSessionExpiresAt = 0L
+                                                    deviceStatusMessage = if (sinhala) "Remote Session එක නතර කළා." else "Remote session stopped."
+                                                } catch (error: Exception) {
+                                                    deviceStatusMessage = (error.message ?: "Could not stop session").take(140)
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.StopCircle, null)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (sinhala) "Session නතර කරන්න" else "Stop Session")
+                                    }
+                                }
+                            }
+                        }
 
                         Card(
                             Modifier.fillMaxWidth(),
@@ -2878,6 +3869,170 @@ internal fun NexusApp(accessToken: String) {
                     }
                 }
             }
+        }
+
+        if (showCameraModeDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showCameraModeDialog = false
+                    if (remoteActionRequestId.isNotBlank()) {
+                        remoteActionResult = JSONObject().put("reason", "camera_action_cancelled")
+                    }
+                },
+                title = { Text(if (sinhala) "Camera ක්‍රියාව තෝරන්න" else "Choose Camera action") },
+                text = {
+                    Text(
+                        if (sinhala) "ඡායාරූපයක් ගන්නද, නැත්නම් තත්පර 30ක් දක්වා ශබ්දයත් සමඟ වීඩියෝවක් පටිගත කරන්නද?"
+                        else "Take a photo or record a video with audio for up to 30 seconds?"
+                    )
+                },
+                confirmButton = {
+                    Column {
+                        TextButton(
+                            onClick = {
+                                showCameraModeDialog = false
+                                launchRemotePhotoCapture()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.PhotoCamera, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "ඡායාරූපයක් ගන්න" else "Take Photo")
+                        }
+                        TextButton(
+                            onClick = {
+                                showCameraModeDialog = false
+                                launchRemoteVideoCapture()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Videocam, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "ශබ්දය සමඟ වීඩියෝවක් ගන්න" else "Record Video with Audio")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showCameraModeDialog = false
+                        if (remoteActionRequestId.isNotBlank()) {
+                            remoteActionResult = JSONObject().put("reason", "camera_action_cancelled")
+                        }
+                    }) {
+                        Text(if (sinhala) "අවලංගු කරන්න" else "Cancel")
+                    }
+                }
+            )
+        }
+
+        if (!isControllerBuild && pendingRemoteRequestId.isNotBlank() &&
+            pendingRemoteRequiresApproval
+        ) {
+            val featureLabel = when (pendingRemoteFeature) {
+                "session" -> if (sinhala) "විනාඩි 30ක Remote Session" else "30-minute remote session"
+                "camera" -> if (sinhala) "කැමරාව" else "Camera"
+                "microphone" -> if (sinhala) "මයික්‍රෆෝනය" else "Microphone"
+                "gallery" -> if (sinhala) "Gallery" else "Gallery"
+                "location" -> if (sinhala) "ස්ථානය" else "Location"
+                "screen" -> if (sinhala) "තිරය" else "Screen"
+                else -> pendingRemoteFeature
+            }
+            AlertDialog(
+                onDismissRequest = { },
+                title = { Text(if (sinhala) "NEXUS දුරස්ථ ඉල්ලීමක්" else "NEXUS remote request") },
+                text = {
+                    Text(
+                        if (pendingRemoteFeature == "session") {
+                            if (sinhala) "මෙම Controller දුරකථනයට විනාඩි 30ක් Camera, Microphone, Gallery සහ Location ඉල්ලීම් සඳහා නැවත නැවත අනුමැතිය නොගෙන ක්‍රියා කිරීමට අවසර දෙන්නද? Screen Share සඳහා Android පද්ධතියේ අවසරය තවමත් අවශ්‍ය වේ. ඔබට සැකසුම් වෙතින් Session එක ඕනෑම වෙලාවක නතර කළ හැකිය."
+                            else "Allow this Controller to use Camera, Microphone, Gallery and Location for 30 minutes without repeated in-app approvals? Android will still require its own permission for Screen Share. You can stop the session at any time in Settings."
+                        } else {
+                            if (sinhala) "Controller දුරකථනයෙන් $featureLabel භාවිත කිරීමට ඉල්ලීමක් ලැබී ඇත. ඔබ අනුමත කළහොත් පමණක් මෙම දුරකථනයේ අදාළ ක්‍රියාව විවෘත වේ."
+                            else "The Controller requested access to $featureLabel. Nothing happens unless you approve on this phone."
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val requestId = pendingRemoteRequestId
+                        val feature = pendingRemoteFeature
+                        scope.launch {
+                            try {
+                                val approval = deviceApiPost(
+                                    "devices/remote/respond",
+                                    JSONObject()
+                                        .put("deviceId", getStableDeviceId(context))
+                                        .put("requestId", requestId)
+                                        .put("status", "approved")
+                                )
+                                remoteActionRequestId = if (feature == "session") "" else requestId
+                                pendingRemoteRequestId = ""
+                                pendingRemoteFeature = ""
+                                pendingRemoteRequiresApproval = true
+                                if (feature == "session") {
+                                    val expiryText = approval.optJSONObject("request")?.optString("expires_at").orEmpty()
+                                    val expiry = runCatching {
+                                        java.time.Instant.parse(expiryText).toEpochMilli()
+                                    }.getOrDefault(System.currentTimeMillis() + 30 * 60_000L)
+                                    remoteSessionRequestId = requestId
+                                    remoteSessionExpiresAt = expiry
+                                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                                        .putString("remote_session_request_id", requestId)
+                                        .putLong("remote_session_expires_at", expiry)
+                                        .apply()
+                                    deviceStatusMessage = if (sinhala) "Remote Session එක විනාඩි 30කට සක්‍රිය කළා." else "Remote session enabled for 30 minutes."
+                                } else when (feature) {
+                                    "camera" -> showCameraModeDialog = true
+                                    "gallery" -> galleryLauncher.launch(arrayOf("image/*", "video/*"))
+                                    "microphone" -> launchRemoteAudioRecording()
+                                    "screen" -> {
+                                        val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                                        screenCaptureLauncher.launch(manager.createScreenCaptureIntent())
+                                    }
+                                    "location" -> {
+                                        locationPermissionLauncher.launch(
+                                            arrayOf(
+                                                Manifest.permission.ACCESS_FINE_LOCATION,
+                                                Manifest.permission.ACCESS_COARSE_LOCATION
+                                            )
+                                        )
+                                    }
+                                }
+                                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                                    .remove("pending_remote_request_id").remove("pending_remote_feature")
+                                    .remove("pending_remote_requires_approval")
+                                    .remove("pending_remote_created_at").apply()
+                            } catch (error: Exception) {
+                                deviceStatusMessage = (error.message ?: "Could not approve remote request").take(160)
+                            }
+                        }
+                    }) { Text(if (sinhala) "අනුමත කරන්න" else "Approve") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        val requestId = pendingRemoteRequestId
+                        scope.launch {
+                            try {
+                                deviceApiPost(
+                                    "devices/remote/respond",
+                                    JSONObject()
+                                        .put("deviceId", getStableDeviceId(context))
+                                        .put("requestId", requestId)
+                                        .put("status", "declined")
+                                )
+                            } catch (error: Exception) {
+                                android.util.Log.e("NEXUS_REMOTE", "Decline response failed", error)
+                            } finally {
+                                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                                    .remove("pending_remote_request_id").remove("pending_remote_feature")
+                                    .remove("pending_remote_created_at").apply()
+                                pendingRemoteRequestId = ""
+                                pendingRemoteFeature = ""
+                                pendingRemoteRequiresApproval = true
+                            }
+                        }
+                    }) { Text(if (sinhala) "ප්‍රතික්ෂේප කරන්න" else "Decline") }
+                }
+            )
         }
     }
 }
