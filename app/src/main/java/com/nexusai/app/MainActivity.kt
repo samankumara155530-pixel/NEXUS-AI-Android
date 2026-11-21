@@ -2881,7 +2881,7 @@ internal fun NexusApp(accessToken: String) {
                             Triple(if (sinhala) "Background Connection Service" else "Background Connection Service", if (sinhala) "Backend heartbeat පසු" else "After backend heartbeat", false),
                             Triple(if (sinhala) "Remote Camera සහ Photo Capture" else "Remote Camera and Photo Capture", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
                             Triple(if (sinhala) "Independent Remote Microphone" else "Independent Remote Microphone", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
-                            Triple(if (sinhala) "Screen Sharing / Remote Control" else "Screen Sharing / Remote Control", if (sinhala) "සැලසුම් අදියර" else "Planned", false),
+                            Triple(if (sinhala) "Remote Screen Preview" else "Remote Screen Preview", if (sinhala) "අනුමැතියෙන් එක් තිර දර්ශනයක් ලබාගැනීම එක් කළා; Live stream / touch control ඉතිරියි" else "One consented screen preview added; live stream / touch control remain", false),
                             Triple(if (sinhala) "Gallery / Files / Location / Notifications" else "Gallery / Files / Location / Notifications", if (sinhala) "සැලසුම් අදියර" else "Planned", false)
                         )
                         val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
