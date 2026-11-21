@@ -971,6 +971,7 @@ internal fun NexusApp(accessToken: String) {
         pendingVideoOutputUri = null
         if (requestId.isNotBlank()) {
             if (result.resultCode == android.app.Activity.RESULT_OK && uri != null) {
+                if (outputUri != null && outputUri != uri) finalizeCaptureUri(outputUri, true, false)
                 finalizeCaptureUri(uri, true, true)
                 scope.launch {
                     try {
