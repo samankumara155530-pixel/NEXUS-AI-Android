@@ -9,6 +9,10 @@ import android.speech.RecognizerIntent
 import android.provider.MediaStore
 import android.provider.CalendarContract
 import android.widget.Toast
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
+import com.google.firebase.messaging.FirebaseMessaging
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -290,6 +294,25 @@ internal fun NexusApp(accessToken: String) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // Firebase is initialized from the project's Android client configuration.
+    // This is a public client key; privileged Firebase service credentials remain on the backend.
+    LaunchedEffect(Unit) {
+        try {
+            if (FirebaseApp.getApps(context).none { it.name == FirebaseApp.DEFAULT_APP_NAME }) {
+                val options = FirebaseOptions.Builder()
+                    .setApplicationId("1:449687895984:android:043144420ba8016f176075")
+                    .setApiKey("AIzaSyBvwzOKU9c_mFtWkk")
+                    .setProjectId("nexus-ai-75a96")
+                    .setGcmSenderId("449687895984")
+                    .setStorageBucket("nexus-ai-75a96.firebasestorage.app")
+                    .build()
+                FirebaseApp.initializeApp(context, options)
+            }
+        } catch (error: Exception) {
+            android.util.Log.e("NEXUS_FCM", "Firebase initialization failed", error)
+        }
+    }
 
     var themeMode by remember {
         mutableStateOf(
@@ -716,6 +739,22 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    suspend fun registerCurrentFcmToken() {
+        try {
+            val token = withContext(Dispatchers.IO) {
+                Tasks.await(FirebaseMessaging.getInstance().token)
+            }
+            deviceApiPost(
+                "devices/push/register",
+                JSONObject()
+                    .put("deviceId", getStableDeviceId(context))
+                    .put("fcmToken", token)
+            )
+        } catch (error: Exception) {
+            deviceStatusMessage = (error.message ?: "FCM token registration pending").take(120)
+        }
+    }
+
     suspend fun deviceApiGet(route: String): JSONObject = withContext(Dispatchers.IO) {
         val connection = (
             URL("https://nexus-ai-backend-six.vercel.app/$route")
@@ -741,6 +780,11 @@ internal fun NexusApp(accessToken: String) {
         } finally {
             connection.disconnect()
         }
+    }
+
+    LaunchedEffect(accessToken) {
+        // Re-register on launch so token rotation and reinstall/update are recovered.
+        registerCurrentFcmToken()
     }
 
     LaunchedEffect(tab) {
@@ -2151,6 +2195,7 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
+                                                registerCurrentFcmToken()
                                                 deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
@@ -2198,6 +2243,7 @@ internal fun NexusApp(accessToken: String) {
                                                         .put("deviceId", getStableDeviceId(context))
                                                 )
                                                 deviceClaimCode = ""
+                                                registerCurrentFcmToken()
                                                 deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
