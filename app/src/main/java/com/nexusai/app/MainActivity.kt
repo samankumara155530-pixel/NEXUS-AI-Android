@@ -299,7 +299,7 @@ internal fun NexusApp(accessToken: String) {
         if (!granted && !isControllerBuild) {
             Toast.makeText(
                 context,
-                if (sinhala) "Wake දැනුම්දීම පෙන්වීමට Notifications අවසරය අවශ්‍යයි." else "Allow notifications to see Target Wake receipts.",
+                "Wake දැනුම්දීම පෙන්වීමට Notifications අවසරය ලබා දෙන්න.",
                 Toast.LENGTH_LONG
             ).show()
         }
