@@ -3448,6 +3448,10 @@ internal fun NexusApp(accessToken: String) {
                                                             .put("deviceId", getStableDeviceId(context))
                                                             .put("requestId", remoteSessionRequestId)
                                                     )
+                                                    // Remove a completed-but-unuploaded recording before cancelling any active recorder.
+                                                    val audioResultPath = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                                                        .getString("remote_audio_result_path", "").orEmpty()
+                                                    if (audioResultPath.isNotBlank()) runCatching { File(audioResultPath).delete() }
                                                     // Stop any active microphone/screen capture immediately.
                                                     runCatching {
                                                         context.startService(
@@ -3459,9 +3463,6 @@ internal fun NexusApp(accessToken: String) {
                                                     runCatching {
                                                         context.stopService(Intent(context, NexusScreenCaptureService::class.java))
                                                     }
-                                                    val audioResultPath = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                                        .getString("remote_audio_result_path", "").orEmpty()
-                                                    if (audioResultPath.isNotBlank()) runCatching { File(audioResultPath).delete() }
                                                     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                                                         .remove("remote_session_request_id")
                                                         .remove("remote_session_expires_at")
