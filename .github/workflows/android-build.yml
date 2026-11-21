@@ -44,15 +44,9 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Prepare Firebase Android configuration
-        env:
-          FIREBASE_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON_BASE64 }}
+      - name: Validate Firebase Android configuration
         run: |
-          if [ -z "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" ]; then
-            echo "::error::Add FIREBASE_GOOGLE_SERVICES_JSON_BASE64 to GitHub Actions secrets before building the Firebase-enabled app."
-            exit 1
-          fi
-          printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
+          test -s app/google-services.json || { echo "::error::app/google-services.json is missing."; exit 1; }
           python3 -c 'import json; d=json.load(open("app/google-services.json")); assert d["project_info"]["project_id"] == "nexus-ai-75a96"; assert any(c["client_info"]["android_client_info"]["package_name"] == "com.nexusai.app" for c in d["client"])'
 
       - name: Prepare stable app signing key
