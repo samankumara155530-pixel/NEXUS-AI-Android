@@ -28,6 +28,10 @@
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Location is requested at runtime only after the Target user approves a request. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
     <!-- APP QUERIES -->
     <queries>
 
