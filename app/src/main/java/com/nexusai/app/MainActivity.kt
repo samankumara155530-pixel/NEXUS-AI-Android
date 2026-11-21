@@ -214,8 +214,17 @@ private fun readRemoteMediaBytes(
 ): ByteArray {
     val resolver = context.contentResolver
     if (mimeType.startsWith("image/")) {
-        val source = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
-            ?: throw IllegalStateException("Could not read selected image")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            ?: throw IllegalStateException("Could not inspect selected image")
+        var sampleSize = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sampleSize > 2400) {
+            sampleSize *= 2
+        }
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val source = resolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, decodeOptions)
+        } ?: throw IllegalStateException("Could not read selected image")
         val ratio = minOf(1f, 1920f / maxOf(source.width, source.height).toFloat())
         val scaled = if (ratio < 1f) Bitmap.createScaledBitmap(
             source,
