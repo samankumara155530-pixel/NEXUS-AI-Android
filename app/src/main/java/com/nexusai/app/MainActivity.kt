@@ -2343,6 +2343,16 @@ internal fun NexusApp(accessToken: String) {
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.secondary)
                                                 }
+                                                val fcmRegistered = device.optString("fcm_status") == "registered"
+                                                Text(
+                                                    if (fcmRegistered) {
+                                                        if (sinhala) "FCM Token: ලියාපදිංචි" else "FCM token: registered"
+                                                    } else {
+                                                        if (sinhala) "FCM Token: ලියාපදිංචි නැහැ" else "FCM token: not registered"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (fcmRegistered) Color(0xFF35B779) else MaterialTheme.colorScheme.error
+                                                )
                                             }
                                             Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
                                                 tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
@@ -2358,6 +2368,7 @@ internal fun NexusApp(accessToken: String) {
                                 }
                                 val activeTarget = pairedDevices.firstOrNull {
                                     it.optString("device_role") == "target" &&
+                                        it.optString("fcm_status") == "registered" &&
                                         (it.isNull("revoked_at") || it.optString("revoked_at") == "null")
                                 }
                                 Button(
