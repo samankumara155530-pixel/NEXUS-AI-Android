@@ -1,6 +1,15 @@
 package com.nexusai.app
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -14,8 +23,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Handles only NEXUS's fixed, data-only presence wake message.
- * It never opens the UI or accesses camera, microphone, files, or location.
+ * Target-only handler for the fixed NEXUS presence wake.
+ * It records the event locally, posts a visible notification when Android
+ * notification permission is available, then acknowledges the real result.
+ * It never executes arbitrary commands or accesses camera/microphone/location.
  */
 class NexusFirebaseMessagingService : FirebaseMessagingService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,17 +54,80 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 
         serviceScope.launch {
             try {
+                // Persist first so the target can display the last event on next launch.
+                val receivedAt = System.currentTimeMillis()
+                getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("target_last_wake_request_id", requestId)
+                    .putLong("target_last_wake_received_at", receivedAt)
+                    .putString("target_last_wake_status", "processed")
+                    .commit()
+
                 NexusFcm.acknowledge(applicationContext, requestId, "received")
-                // The allow-listed wake has been received and safely handled.
+
+                // Visible proof on the Target phone when notifications are allowed.
+                withContext(Dispatchers.Main) {
+                    showWakeNotification(requestId)
+                }
+
                 NexusFcm.acknowledge(applicationContext, requestId, "processed")
+                Log.i(TAG, "NEXUS_WAKE processed requestId=$requestId")
             } catch (error: Exception) {
-                Log.e(TAG, "Wake acknowledgement failed: ${error.message}", error)
+                getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("target_last_wake_status", "acknowledgement_failed")
+                    .apply()
+                Log.e(TAG, "Wake handling/acknowledgement failed: ${error.message}", error)
             }
+        }
+    }
+
+    private fun showWakeNotification(requestId: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "NEXUS Target Wake",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Shows when this Target phone receives a NEXUS wake request"
+                }
+            )
+        }
+
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "Wake recorded; notification permission is not granted")
+            return
+        }
+
+        try {
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("NEXUS AI — Target Wake")
+                .setContentText("Wake message received and processed.")
+                .setStyle(
+                    NotificationCompat.BigTextStyle().bigText(
+                        "This Target phone received and processed a NEXUS wake request. Request: ${requestId.take(8)}"
+                    )
+                )
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Notification could not be shown: ${error.message}")
         }
     }
 
     private companion object {
         const val TAG = "NEXUS_FCM"
+        const val CHANNEL_ID = "nexus_target_wake"
+        const val NOTIFICATION_ID = 2101
     }
 }
 
