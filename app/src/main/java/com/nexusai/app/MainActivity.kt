@@ -2362,7 +2362,10 @@ internal fun NexusApp(accessToken: String) {
                                                                 try {
                                                                     deviceApiPost(
                                                                         "devices/$targetDeviceId/push/wake",
-                                                                        JSONObject()
+                                                                        JSONObject().put(
+                                                                            "controllerDeviceId",
+                                                                            getStableDeviceId(context)
+                                                                        )
                                                                     )
                                                                     deviceStatusMessage = if (sinhala)
                                                                         "Wake පණිවිඩය FCM වෙත සාර්ථකව යැව්වා."
