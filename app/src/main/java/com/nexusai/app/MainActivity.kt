@@ -163,7 +163,7 @@ private suspend fun remoteMediaUpload(
             if (status !in 200..299) {
                 throw IllegalStateException(json.optString("error", "Media API HTTP $status"))
             }
-            json
+            return json
         } finally {
             connection.disconnect()
         }
@@ -1063,7 +1063,7 @@ internal fun NexusApp(accessToken: String) {
         } else videoLauncher.launch(intent)
     }
 
-    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+    val remoteAudioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         val requestId = remoteActionRequestId
@@ -1099,7 +1099,7 @@ internal fun NexusApp(accessToken: String) {
                 remoteActionResult = JSONObject().put("reason", error.message ?: "audio_service_start_failed")
             }
         } else {
-            microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            remoteAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
@@ -3282,12 +3282,12 @@ internal fun NexusApp(accessToken: String) {
                         Spacer(Modifier.height(10.dp))
 
                         ToolCard(
-                            title = if (sinhala) "Gallery වෙතින් ඡායාරූපයක් තෝරන්න" else "Choose from Gallery",
-                            description = if (sinhala) "දුරකථනයේ Gallery එකෙන් ඡායාරූපයක් තෝරන්න." else "Select an image from your phone's Gallery.",
+                            title = if (sinhala) "Gallery වෙතින් මාධ්‍යයක් තෝරන්න" else "Choose media from Gallery",
+                            description = if (sinhala) "දුරකථනයේ Gallery එකෙන් ඡායාරූපයක් හෝ වීඩියෝවක් තෝරන්න." else "Select a photo or video from your phone's Gallery.",
                             icon = Icons.Default.PhotoLibrary
                         ) {
                             try {
-                                galleryLauncher.launch("image/*")
+                                galleryLauncher.launch(arrayOf("image/*", "video/*"))
                             } catch (_: Exception) {
                                 Toast.makeText(
                                     context,
