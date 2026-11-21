@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
+import android.app.PendingIntent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
@@ -47,10 +49,22 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
         if (BuildConfig.NEXUS_DEVICE_ROLE != "target") return
 
         val data = message.data
-        if (data["type"] != "NEXUS_WAKE" || data["action"] != "SYNC_PRESENCE") return
-
         val requestId = data["requestId"].orEmpty()
         if (requestId.isBlank()) return
+
+        if (data["type"] == "NEXUS_REMOTE_REQUEST" && data["action"] == "REQUEST_APPROVAL") {
+            val feature = data["feature"].orEmpty()
+            if (feature !in setOf("camera", "microphone", "gallery", "location")) return
+            getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE).edit()
+                .putString("pending_remote_request_id", requestId)
+                .putString("pending_remote_feature", feature)
+                .putLong("pending_remote_created_at", System.currentTimeMillis())
+                .apply()
+            showRemoteApprovalNotification(requestId, feature)
+            return
+        }
+
+        if (data["type"] != "NEXUS_WAKE" || data["action"] != "SYNC_PRESENCE") return
 
         serviceScope.launch {
             try {
@@ -79,6 +93,54 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
                     .apply()
                 Log.e(TAG, "Wake handling/acknowledgement failed: ${error.message}", error)
             }
+        }
+    }
+
+    private fun showRemoteApprovalNotification(requestId: String, feature: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "NEXUS Target Requests",
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+            )
+        }
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "Remote request stored; notification permission is not granted")
+            return
+        }
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("nexus_remote_request_id", requestId)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, requestId.hashCode(), openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val title = when (feature) {
+            "camera" -> "Camera access request"
+            "microphone" -> "Microphone access request"
+            "gallery" -> "Gallery access request"
+            else -> "Location access request"
+        }
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("NEXUS AI — $title")
+            .setContentText("Open NEXUS AI on this phone to review and approve or decline.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        try {
+            NotificationManagerCompat.from(this).notify(requestId.hashCode(), notification)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Remote request notification could not be shown: ${error.message}")
         }
     }
 
