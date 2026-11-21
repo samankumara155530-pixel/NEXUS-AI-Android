@@ -1,8 +1,10 @@
 package com.nexusai.app
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
+import androidx.work.Data
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -49,6 +51,17 @@ class NexusHeartbeatWorker(
             return@withContext Result.retry()
         }
 
+        // FCM registration is best-effort; heartbeat must still work without Firebase config.
+        try {
+            NexusPushManager.registerCurrentToken(applicationContext)
+        } catch (error: Exception) {
+            Log.w(
+                "NexusHeartbeatWorker",
+                "FCM token registration failed; heartbeat will continue",
+                error
+            )
+        }
+
         var connection: HttpURLConnection? = null
         try {
             connection = (URL("$BACKEND_BASE_URL/devices/heartbeat")
@@ -68,7 +81,23 @@ class NexusHeartbeatWorker(
             }
 
             when (connection.responseCode) {
-                in 200..299 -> Result.success()
+                in 200..299 -> {
+                    val wakeRequestId = inputData.getString("wake_request_id").orEmpty()
+                    if (wakeRequestId.isNotBlank()) {
+                        try {
+                            NexusPushManager.acknowledgeWake(
+                                applicationContext,
+                                deviceId,
+                                wakeRequestId,
+                                "processed"
+                            )
+                        } catch (ackError: Exception) {
+                            Log.w("NexusHeartbeatWorker", "Wake processing acknowledgement failed", ackError)
+                            return@withContext Result.retry()
+                        }
+                    }
+                    Result.success()
+                }
                 400, 404, 410 -> Result.failure()
                 401, 408, 429 -> Result.retry()
                 in 500..599 -> Result.retry()
@@ -88,7 +117,7 @@ class NexusHeartbeatWorker(
         private const val PERIODIC_WORK = "nexus_device_heartbeat_periodic"
         private const val IMMEDIATE_WORK = "nexus_device_heartbeat_initial"
 
-        fun enable(context: Context) {
+        fun enable(context: Context, wakeRequestId: String? = null) {
             val manager = WorkManager.getInstance(context)
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -112,17 +141,22 @@ class NexusHeartbeatWorker(
                 periodic
             )
 
-            val immediate = OneTimeWorkRequestBuilder<NexusHeartbeatWorker>()
+            val immediateBuilder = OneTimeWorkRequestBuilder<NexusHeartbeatWorker>()
                 .setConstraints(constraints)
                 .setBackoffCriteria(
                     BackoffPolicy.EXPONENTIAL,
                     30,
                     TimeUnit.SECONDS
                 )
-                .build()
-
+            if (!wakeRequestId.isNullOrBlank()) {
+                immediateBuilder.setInputData(
+                    Data.Builder().putString("wake_request_id", wakeRequestId).build()
+                )
+            }
+            val immediate = immediateBuilder.build()
+            val uniqueName = if (wakeRequestId.isNullOrBlank()) IMMEDIATE_WORK else "$IMMEDIATE_WORK:$wakeRequestId"
             manager.enqueueUniqueWork(
-                IMMEDIATE_WORK,
+                uniqueName,
                 ExistingWorkPolicy.KEEP,
                 immediate
             )

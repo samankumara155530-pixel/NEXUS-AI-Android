@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -2316,8 +2317,16 @@ internal fun NexusApp(accessToken: String) {
                                         }
                                         .values
                                         .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
+                                    val currentDeviceId = getStableDeviceId(context)
+                                    val currentDeviceRole = uniqueDevices.firstOrNull { item ->
+                                        item.optString("device_id").equals(currentDeviceId, ignoreCase = true)
+                                    }?.optString("device_role").orEmpty()
                                     uniqueDevices.forEach { device ->
                                         val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
+                                        val targetDeviceId = device.optString("device_id").ifBlank {
+                                            device.optString("deviceId")
+                                        }
+                                        val isThisPhone = targetDeviceId.equals(getStableDeviceId(context), ignoreCase = true)
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -2343,8 +2352,76 @@ internal fun NexusApp(accessToken: String) {
                                                         color = MaterialTheme.colorScheme.secondary)
                                                 }
                                             }
-                                            Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
-                                                tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    if (revoked) Icons.Default.Block else Icons.Default.CheckCircle,
+                                                    null,
+                                                    tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779)
+                                                )
+                                                if (!revoked && currentDeviceRole == "controller" && device.optString("device_role") == "target" && !isThisPhone && targetDeviceId.isNotBlank()) {
+                                                    TextButton(
+                                                        enabled = !deviceRequestBusy,
+                                                        onClick = {
+                                                            scope.launch {
+                                                                deviceRequestBusy = true
+                                                                try {
+                                                                    val wakeResponse = deviceApiPost(
+                                                                        "devices/$targetDeviceId/push/wake",
+                                                                        JSONObject().put(
+                                                                            "controllerDeviceId",
+                                                                            currentDeviceId
+                                                                        )
+                                                                    )
+                                                                    val requestId = wakeResponse.optString("requestId")
+                                                                    if (requestId.isBlank()) {
+                                                                        throw IllegalStateException("FCM accepted the request but did not return a delivery tracking ID.")
+                                                                    }
+                                                                    deviceStatusMessage = if (sinhala)
+                                                                        "FCM වෙත යැවුණා. Target දුරකථනයෙන් ලැබුණු බව බලාපොරොත්තු වෙමින්..."
+                                                                    else
+                                                                        "Sent to FCM. Waiting for target phone receipt..."
+                                                                    var finalStatus = "sent"
+                                                                    for (attempt in 0 until 8) {
+                                                                        delay(1500)
+                                                                        val statusResponse = deviceApiGet(
+                                                                            "devices/$targetDeviceId/push/status?controllerDeviceId=$currentDeviceId&requestId=$requestId"
+                                                                        )
+                                                                        finalStatus = statusResponse.optJSONObject("delivery")?.optString("status").orEmpty()
+                                                                        if (finalStatus == "received" || finalStatus == "processed" || finalStatus == "failed") break
+                                                                    }
+                                                                    deviceStatusMessage = when (finalStatus) {
+                                                                        "processed" -> if (sinhala) "සාර්ථකයි: Target දුරකථනයට පණිවිඩය ලැබී Presence Sync ක්‍රියාත්මක කළා." else "Success: target received the message and completed presence sync."
+                                                                        "received" -> if (sinhala) "Target දුරකථනයට පණිවිඩය ලැබුණා. Presence Sync තවම ක්‍රියාත්මක වෙමින් පවතී." else "Target received the message. Presence sync is still running."
+                                                                        "failed" -> if (sinhala) "Target පණිවිඩය සැකසීම අසාර්ථකයි." else "Target failed to process the wake message."
+                                                                        else -> if (sinhala) "FCM වෙත යැවුණා. Target එකෙන් ලැබුණු තහවුරු කිරීම තවම නැහැ. පසුව Refresh කර බලන්න." else "FCM accepted the message; target receipt is not confirmed yet. Refresh and check again."
+                                                                    }
+                                                                } catch (e: Exception) {
+                                                                    val error = e.message.orEmpty()
+                                                                    deviceStatusMessage = when {
+                                                                        error.contains("PUSH_TOKEN_NOT_REGISTERED") ->
+                                                                            if (sinhala) "මෙම දුරකථනයේ FCM Token එක තවම ලියාපදිංචි වී නැහැ. එහි App එක විවෘත කර අන්තර්ජාලයට සම්බන්ධ කරන්න." else "This phone has not registered its FCM token yet. Open its app while online."
+                                                                        error.contains("PUSH_WAKE_RATE_LIMITED") ->
+                                                                            if (sinhala) "නැවත උත්සාහ කිරීමට තත්පර 30ක් රැඳී සිටින්න." else "Please wait 30 seconds before trying again."
+                                                                        error.contains("FCM_NOT_CONFIGURED") ->
+                                                                            if (sinhala) "Backend FCM සැකසුම සම්පූර්ණ නැහැ." else "Backend FCM is not configured."
+                                                                        else -> (if (sinhala) "Wake අසාර්ථකයි: " else "Wake failed: ") + error.take(100)
+                                                                    }
+                                                                } finally {
+                                                                    deviceRequestBusy = false
+                                                                }
+                                                            }
+                                                        }
+                                                    ) {
+                                                        Text(if (sinhala) "Wake" else "Wake")
+                                                    }
+                                                } else if (isThisPhone && !revoked) {
+                                                    Text(
+                                                        if (sinhala) "මෙම දුරකථනය" else "This phone",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.secondary
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                     if (pairedDevices.size > uniqueDevices.size) {

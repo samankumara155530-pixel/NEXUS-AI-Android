@@ -13,9 +13,10 @@ android {
         applicationId = "com.nexusai.app"
         minSdk = 26
         targetSdk = 35
-        // Increase versionCode for every installable update.
-        versionCode = 13
-        versionName = "1.4.7"
+        // Target device currently runs 1.5.0 (versionCode 14).
+        // This FCM update must install as an in-place update.
+        versionCode = 15
+        versionName = "1.5.1"
     }
 
     signingConfigs {
@@ -88,5 +89,14 @@ dependencies {
     // Persistent, network-constrained background heartbeat
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
+    // Firebase Cloud Messaging for paired-device presence wake messages
+    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+    implementation("com.google.firebase:firebase-messaging")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// Apply Google Services only when the private Firebase config is present.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }

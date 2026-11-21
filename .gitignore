@@ -4,3 +4,6 @@ local.properties
 **/build/
 .DS_Store
 *.iml
+
+# Firebase client configuration stays local; inject securely during builds
+**/google-services.json

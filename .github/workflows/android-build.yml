@@ -4,6 +4,10 @@ name: Build NEXUS AI APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/fcm-push-notifications
+      - fcm-delivery-ack
 
 permissions:
   contents: read
@@ -44,6 +48,11 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Validate Firebase Android configuration
+        run: |
+          test -s app/google-services.json || { echo "::error::app/google-services.json is missing."; exit 1; }
+          python3 -c 'import json; d=json.load(open("app/google-services.json")); assert d["project_info"]["project_id"] == "nexus-ai-75a96"; assert any(c["client_info"]["android_client_info"]["package_name"] == "com.nexusai.app" for c in d["client"])'
+
       - name: Prepare stable app signing key
         env:
           NEXUS_KEYSTORE_BASE64: ${{ secrets.NEXUS_KEYSTORE_BASE64 }}
@@ -65,11 +74,20 @@ jobs:
           NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
         run: gradle assembleRelease --stacktrace
 
-      - name: Upload signed release APK
+      - name: Prepare controller and target APK packages
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          mkdir -p dist
+          cp "$APK" dist/NEXUS-AI-controller.apk
+          cp "$APK" dist/NEXUS-AI-target.apk
+          sha256sum dist/*.apk
+
+      - name: Upload controller and target APKs
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-AI-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: NEXUS-AI-control-and-target-apks
+          path: dist/*.apk
           if-no-files-found: error
 
       - name: Remove signing key
