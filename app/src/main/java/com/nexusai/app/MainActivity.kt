@@ -1120,6 +1120,73 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    // Deliver completed microphone recordings to the paired Controller.
+    // Keep the Target's temporary file until the private-storage upload is acknowledged.
+    LaunchedEffect(remoteActionRequestId, remoteSessionExpiresAt, isControllerBuild) {
+        if (isControllerBuild || remoteActionRequestId.isBlank()) return@LaunchedEffect
+        val requestId = remoteActionRequestId
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        while (remoteActionRequestId == requestId &&
+            remoteSessionExpiresAt > System.currentTimeMillis()) {
+            val resultId = prefs.getString("remote_audio_result_request_id", "").orEmpty()
+            val resultPath = prefs.getString("remote_audio_result_path", "").orEmpty()
+            val resultError = prefs.getString("remote_audio_result_error", "").orEmpty()
+            if (resultId == requestId && resultPath.isNotBlank()) {
+                val file = File(resultPath)
+                try {
+                    require(file.isFile && file.length() in 1..REMOTE_MEDIA_MAX_BYTES.toLong()) {
+                        "Recording file missing or exceeds 20 MB"
+                    }
+                    val mimeType = prefs.getString("remote_audio_result_mime", "audio/mp4")
+                        .orEmpty().ifBlank { "audio/mp4" }
+                    val uploaded = remoteMediaUpload(
+                        context = context,
+                        accessToken = accessToken,
+                        deviceId = getStableDeviceId(context),
+                        requestId = requestId,
+                        mimeType = mimeType,
+                        fileName = "nexus_audio_recording.m4a",
+                        bytes = withContext(Dispatchers.IO) { file.readBytes() }
+                    )
+                    require(uploaded.optBoolean("success", false)) {
+                        "Controller media delivery was not acknowledged"
+                    }
+                    // Delete only after the backend confirms the private upload and completion.
+                    file.delete()
+                    prefs.edit()
+                        .remove("remote_audio_result_request_id")
+                        .remove("remote_audio_result_path")
+                        .remove("remote_audio_result_size")
+                        .remove("remote_audio_result_mime")
+                        .remove("remote_audio_result_reason")
+                        .remove("remote_audio_result_error")
+                        .apply()
+                    remoteActionResult = JSONObject()
+                        .put("mediaType", "audio")
+                        .put("mediaMimeType", mimeType)
+                    remoteActionRequestId = ""
+                    deviceStatusMessage = if (sinhala) {
+                        "හඬ පටිගත කිරීම ආරක්ෂිතව Controller වෙත යැවුවා."
+                    } else {
+                        "Audio recording securely delivered to Controller."
+                    }
+                    break
+                } catch (error: Exception) {
+                    deviceStatusMessage = (error.message ?: "Audio upload failed").take(140)
+                    // Keep the local temporary file for an explicit retry or session cleanup.
+                    remoteActionResult = JSONObject().put("reason", "audio_delivery_failed")
+                    remoteActionRequestId = ""
+                    break
+                }
+            } else if (resultId == requestId && resultError.isNotBlank()) {
+                remoteActionResult = JSONObject().put("reason", resultError)
+                remoteActionRequestId = ""
+                break
+            }
+            kotlinx.coroutines.delay(500)
+        }
+    }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
