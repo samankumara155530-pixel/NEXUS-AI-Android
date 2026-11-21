@@ -52,16 +52,43 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
         val requestId = data["requestId"].orEmpty()
         if (requestId.isBlank()) return
 
-        if (data["type"] == "NEXUS_REMOTE_REQUEST" && data["action"] == "REQUEST_APPROVAL") {
-            val feature: String = data.get("feature") ?: return
-            val allowedFeatures: Set<String> = setOf("camera", "microphone", "gallery", "location", "screen")
+        if (data["type"] == "NEXUS_REMOTE_REQUEST") {
+            val feature = data["feature"] ?: return
+            val action = data["action"] ?: return
+            val allowedFeatures = setOf("camera", "microphone", "gallery", "location", "screen", "session")
             if (feature !in allowedFeatures) return
-            getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE).edit()
-                .putString("pending_remote_request_id", requestId)
-                .putString("pending_remote_feature", feature)
-                .putLong("pending_remote_created_at", System.currentTimeMillis())
-                .apply()
-            showRemoteApprovalNotification(requestId, feature)
+
+            val prefs = getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE)
+            if (action == "REQUEST_APPROVAL") {
+                prefs.edit()
+                    .putString("pending_remote_request_id", requestId)
+                    .putString("pending_remote_feature", feature)
+                    .putLong("pending_remote_created_at", System.currentTimeMillis())
+                    .apply()
+                showRemoteApprovalNotification(requestId, feature)
+                return
+            }
+
+            if (action == "EXECUTE_APPROVED") {
+                val expectedSessionId = data["sessionRequestId"].orEmpty()
+                val storedSessionId = prefs.getString("remote_session_request_id", "").orEmpty()
+                val storedExpiry = prefs.getLong("remote_session_expires_at", 0L)
+                if (expectedSessionId.isBlank() || expectedSessionId != storedSessionId ||
+                    storedExpiry <= System.currentTimeMillis()
+                ) {
+                    Log.w(TAG, "Ignored remote action because the local approved session is not active")
+                    return
+                }
+                prefs.edit()
+                    .putString("pending_remote_request_id", requestId)
+                    .putString("pending_remote_feature", feature)
+                    .putLong("pending_remote_created_at", System.currentTimeMillis())
+                    .apply()
+                if (!prefs.getBoolean("target_ui_foreground", false)) {
+                    showRemoteActionNotification(feature)
+                }
+                return
+            }
             return
         }
 
@@ -143,6 +170,45 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
             NotificationManagerCompat.from(this).notify(requestId.hashCode(), notification)
         } catch (error: SecurityException) {
             Log.w(TAG, "Remote request notification could not be shown: ${error.message}")
+        }
+    }
+
+    private fun showRemoteActionNotification(feature: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "NEXUS Target Requests",
+                    NotificationManager.IMPORTANCE_HIGH
+                )
+            )
+        }
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this, ("approved-$feature").hashCode(), openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("NEXUS AI — Approved remote session")
+            .setContentText("Open NEXUS AI to continue the approved $feature action.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        try {
+            NotificationManagerCompat.from(this).notify(("approved-$feature").hashCode(), notification)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Remote action notification could not be shown: ${error.message}")
         }
     }
 
