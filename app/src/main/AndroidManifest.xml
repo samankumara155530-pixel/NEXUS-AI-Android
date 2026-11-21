@@ -99,6 +99,11 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".NexusScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <!-- NEXUS VOICE SERVICE -->
         <service
             android:name=".NexusVoiceService"
