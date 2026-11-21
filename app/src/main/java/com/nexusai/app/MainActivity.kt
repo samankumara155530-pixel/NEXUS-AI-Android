@@ -578,6 +578,14 @@ internal fun NexusApp(accessToken: String) {
     var remoteActionResult by remember { mutableStateOf<JSONObject?>(null) }
     var remoteResultImageBase64 by remember { mutableStateOf("") }
     var remoteResultMessage by remember { mutableStateOf("") }
+    val remoteResultPreviewBitmap = remember(remoteResultImageBase64) {
+        runCatching {
+            if (remoteResultImageBase64.isBlank()) null else {
+                val bytes = Base64.decode(remoteResultImageBase64, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }
+        }.getOrNull()
+    }
 
     var prompt by remember {
         mutableStateOf("")
@@ -2665,17 +2673,9 @@ internal fun NexusApp(accessToken: String) {
                                 }
                                 if (remoteResultMessage.isNotBlank()) {
                                     Text(remoteResultMessage, color = MaterialTheme.colorScheme.secondary)
-                                    val previewBitmap = remember(remoteResultImageBase64) {
-                                        runCatching {
-                                            if (remoteResultImageBase64.isBlank()) null else {
-                                                val bytes = Base64.decode(remoteResultImageBase64, Base64.DEFAULT)
-                                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-                                            }
-                                        }.getOrNull()
-                                    }
-                                    if (previewBitmap != null) {
+                                    if (remoteResultPreviewBitmap != null) {
                                         Image(
-                                            bitmap = previewBitmap,
+                                            bitmap = remoteResultPreviewBitmap,
                                             contentDescription = "Consent-approved Target image preview",
                                             modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp)
                                         )
