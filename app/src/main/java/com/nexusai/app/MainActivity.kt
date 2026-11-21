@@ -780,20 +780,25 @@ internal fun NexusApp(accessToken: String) {
     }
 
     LaunchedEffect(tab) {
-        if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
-            deviceRequestBusy = true
-            try {
-                val result = deviceApiGet("devices")
-                val list = result.optJSONArray("devices") ?: JSONArray()
-                pairedDevices.clear()
-                for (index in 0 until list.length()) {
-                    pairedDevices.add(list.optJSONObject(index) ?: JSONObject())
+        if (tab == Tab.TOOLS && BuildConfig.DEVICE_ROLE == "controller") {
+            while (true) {
+                if (!deviceRequestBusy) {
+                    deviceRequestBusy = true
+                    try {
+                        val result = deviceApiGet("devices")
+                        val list = result.optJSONArray("devices") ?: JSONArray()
+                        pairedDevices.clear()
+                        for (index in 0 until list.length()) {
+                            pairedDevices.add(list.optJSONObject(index) ?: JSONObject())
+                        }
+                        deviceListLoaded = true
+                    } catch (error: Exception) {
+                        deviceStatusMessage = (error.message ?: "Could not refresh devices").take(120)
+                    } finally {
+                        deviceRequestBusy = false
+                    }
                 }
-                deviceListLoaded = true
-            } catch (e: Exception) {
-                deviceStatusMessage = (e.message ?: "Could not load devices").take(120)
-            } finally {
-                deviceRequestBusy = false
+                delay(5000)
             }
         }
     }
