@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- CAMERA -->
+    <!-- CAMERA: runtime consent is requested only when a camera action is used. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- CAMERA HARDWARE IS OPTIONAL -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
