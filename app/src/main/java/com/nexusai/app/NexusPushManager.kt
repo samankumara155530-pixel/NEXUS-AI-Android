@@ -89,4 +89,41 @@ internal object NexusPushManager {
             connection?.disconnect()
         }
     }
+    /** Acknowledge FCM receipt or successful presence processing to the backend. */
+    suspend fun acknowledgeWake(
+        context: Context,
+        deviceId: String,
+        requestId: String,
+        stage: String
+    ) = withContext(Dispatchers.IO) {
+        require(stage == "received" || stage == "processed")
+        val accessToken = NexusAuthManager.refreshAccessToken(context, "")
+        if (accessToken.isBlank()) throw IllegalStateException("No authenticated session for FCM acknowledgement")
+        val connection = (URL("$BACKEND_BASE_URL/devices/push/ack")
+            .openConnection() as HttpURLConnection)
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 12000
+            connection.readTimeout = 15000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $accessToken")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "application/json")
+            val payload = JSONObject()
+                .put("deviceId", deviceId)
+                .put("requestId", requestId)
+                .put("stage", stage)
+            connection.outputStream.use {
+                it.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val body = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw IllegalStateException("FCM acknowledgement failed: HTTP $code $body")
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
 }
