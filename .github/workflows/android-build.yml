@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - feature/fcm-push-notifications
+      - fcm-delivery-ack
 
 permissions:
   contents: read
@@ -73,11 +74,20 @@ jobs:
           NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
         run: gradle assembleRelease --stacktrace
 
-      - name: Upload signed release APK
+      - name: Prepare controller and target APK packages
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          mkdir -p dist
+          cp "$APK" dist/NEXUS-AI-controller.apk
+          cp "$APK" dist/NEXUS-AI-target.apk
+          sha256sum dist/*.apk
+
+      - name: Upload controller and target APKs
         uses: actions/upload-artifact@v4
         with:
-          name: NEXUS-AI-release-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: NEXUS-AI-control-and-target-apks
+          path: dist/*.apk
           if-no-files-found: error
 
       - name: Remove signing key
