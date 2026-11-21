@@ -906,7 +906,14 @@ internal fun NexusApp(accessToken: String) {
                     JSONObject()
                         .put("deviceId", getStableDeviceId(context))
                         .put("requestId", requestId)
-                        .put("status", "completed")
+                        .put(
+                            "status",
+                            if (
+                                result.has("reason") ||
+                                result.optString("cameraResult") == "cancelled_or_no_thumbnail" ||
+                                result.optString("gallerySelection") == "cancelled"
+                            ) "failed" else "completed"
+                        )
                         .put("result", result)
                 )
             } catch (error: Exception) {
