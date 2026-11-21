@@ -292,6 +292,32 @@ internal fun NexusApp(accessToken: String) {
     val scope = rememberCoroutineScope()
     val isControllerBuild = BuildConfig.NEXUS_DEVICE_ROLE == "controller"
 
+    // Target must be allowed to show a visible receipt when a Wake arrives.
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted && !isControllerBuild) {
+            Toast.makeText(
+                context,
+                if (sinhala) "Wake දැනුම්දීම පෙන්වීමට Notifications අවසරය අවශ්‍යයි." else "Allow notifications to see Target Wake receipts.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    LaunchedEffect(isControllerBuild) {
+        if (
+            !isControllerBuild &&
+            android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     var themeMode by remember {
         mutableStateOf(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
