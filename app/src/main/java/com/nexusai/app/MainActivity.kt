@@ -2217,13 +2217,13 @@ internal fun NexusApp(accessToken: String) {
                                     Text(if (sinhala) "මෙම දුරකථනය Pair කරන්න" else "Pair this phone")
                                 }
                                 }
-                                }
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
                                 }
                             }
                         }
 
+                        if (isControllerBuild) {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(22.dp)
@@ -2339,6 +2339,55 @@ internal fun NexusApp(accessToken: String) {
                                         )
                                     }
                                 }
+                                val activeTarget = pairedDevices.firstOrNull {
+                                    it.optString("device_role") == "target" &&
+                                        (it.isNull("revoked_at") || it.optString("revoked_at") == "null")
+                                }
+                                Button(
+                                    enabled = !deviceRequestBusy && activeTarget != null,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = {
+                                        scope.launch {
+                                            deviceRequestBusy = true
+                                            wakeStatusMessage = if (sinhala) "Wake පණිවිඩය යවමින්..." else "Sending wake request..."
+                                            try {
+                                                val targetId = activeTarget?.optString("device_id").orEmpty()
+                                                val sent = deviceApiPost(
+                                                    "devices/" + targetId + "/push/wake",
+                                                    JSONObject().put("controllerDeviceId", getStableDeviceId(context))
+                                                )
+                                                val requestId = sent.optString("requestId")
+                                                wakeStatusMessage = if (sinhala) "FCM වෙත යැවුවා. Target ලැබීම තහවුරු කරමින්..." else "Accepted by FCM. Checking target receipt..."
+                                                var deliveryStatus = "sent"
+                                                for (attempt in 0 until 8) {
+                                                    kotlinx.coroutines.delay(1500)
+                                                    val status = deviceApiGet(
+                                                        "devices/" + targetId + "/push/status?controllerDeviceId=" +
+                                                            getStableDeviceId(context) + "&requestId=" + requestId
+                                                    )
+                                                    deliveryStatus = status.optJSONObject("delivery")?.optString("status", "sent") ?: "sent"
+                                                    if (deliveryStatus == "received" || deliveryStatus == "processed" || deliveryStatus == "failed") break
+                                                }
+                                                wakeStatusMessage = when (deliveryStatus) {
+                                                    "received", "processed" -> if (sinhala) "Target දුරකථනයට Wake පණිවිඩය ලැබුණා." else "Target phone received the wake message."
+                                                    "failed" -> if (sinhala) "Wake යැවීම අසාර්ථකයි." else "Wake delivery failed."
+                                                    else -> if (sinhala) "FCM වෙත යවා ඇත; Target ලැබුණු බව තවම තහවුරු නැහැ." else "FCM accepted it; target receipt is not confirmed."
+                                                }
+                                            } catch (e: Exception) {
+                                                wakeStatusMessage = (e.message ?: "Wake failed").take(140)
+                                            } finally {
+                                                deviceRequestBusy = false
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Icon(Icons.Default.PowerSettingsNew, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (sinhala) "Target Wake පරීක්ෂා කරන්න" else "Wake Target")
+                                }
+                                if (wakeStatusMessage.isNotBlank()) {
+                                    Text(wakeStatusMessage, color = MaterialTheme.colorScheme.secondary)
+                                }
                                 Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
                                 val remoteFeatures = listOf(
                                     Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
@@ -2368,6 +2417,7 @@ internal fun NexusApp(accessToken: String) {
                                     color = MaterialTheme.colorScheme.secondary
                                 )
                             }
+                        }
                         }
 
                         OutlinedTextField(
