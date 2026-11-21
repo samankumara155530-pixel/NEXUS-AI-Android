@@ -1142,7 +1142,7 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
-    LaunchedEffect(pendingRemoteRequestId, pendingRemoteFeature, remoteSessionExpiresAt) {
+    LaunchedEffect(pendingRemoteRequestId, pendingRemoteFeature, remoteSessionExpiresAt, pendingRemoteRequiresApproval) {
         if (isControllerBuild || pendingRemoteRequestId.isBlank() ||
             pendingRemoteRequiresApproval || pendingRemoteFeature == "session" ||
             remoteSessionExpiresAt <= System.currentTimeMillis()
