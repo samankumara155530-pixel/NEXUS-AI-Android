@@ -4,6 +4,9 @@ name: Build NEXUS AI APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/controller-target-fcm-permissions
 
 permissions:
   contents: read
