@@ -921,13 +921,26 @@ internal fun NexusApp(accessToken: String) {
     LaunchedEffect(isControllerBuild) {
         if (!isControllerBuild) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val createdAt = prefs.getLong("pending_remote_created_at", 0L)
-            if (createdAt > 0L && System.currentTimeMillis() - createdAt <= 120_000L) {
-                pendingRemoteRequestId = prefs.getString("pending_remote_request_id", "").orEmpty()
-                pendingRemoteFeature = prefs.getString("pending_remote_feature", "").orEmpty()
-            } else {
-                prefs.edit().remove("pending_remote_request_id").remove("pending_remote_feature")
-                    .remove("pending_remote_created_at").apply()
+            // Keep the Target approval prompt in sync even when FCM arrives while
+            // MainActivity is already open; a one-shot read misses that event.
+            while (true) {
+                val requestId = prefs.getString("pending_remote_request_id", "").orEmpty()
+                val feature = prefs.getString("pending_remote_feature", "").orEmpty()
+                val createdAt = prefs.getLong("pending_remote_created_at", 0L)
+                val age = System.currentTimeMillis() - createdAt
+                if (requestId.isNotBlank() && feature.isNotBlank() &&
+                    createdAt > 0L && age in 0L..120_000L
+                ) {
+                    pendingRemoteRequestId = requestId
+                    pendingRemoteFeature = feature
+                } else {
+                    prefs.edit().remove("pending_remote_request_id")
+                        .remove("pending_remote_feature")
+                        .remove("pending_remote_created_at").apply()
+                    pendingRemoteRequestId = ""
+                    pendingRemoteFeature = ""
+                }
+                kotlinx.coroutines.delay(750)
             }
         }
     }
