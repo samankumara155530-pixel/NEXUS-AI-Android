@@ -2407,7 +2407,7 @@ internal fun NexusApp(accessToken: String) {
                                                 val requestId = sent.optString("requestId")
                                                 wakeStatusMessage = if (sinhala) "Firebase වෙත යැවුවා. Target ප්‍රතිචාරය බලාපොරොත්තු වෙමින්..." else "Accepted by Firebase. Waiting for Target acknowledgement..."
                                                 var finalStatus = "sent"
-                                                repeat(12) {
+                                                for (attempt in 0 until 12) {
                                                     delay(2000)
                                                     val status = deviceApiGet(
                                                         "devices/$targetId/push/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
@@ -2419,7 +2419,7 @@ internal fun NexusApp(accessToken: String) {
                                                         "failed" -> if (sinhala) "පණිවිඩය යැවීම අසාර්ථකයි." else "Wake delivery failed."
                                                         else -> if (sinhala) "Target ප්‍රතිචාරය බලාපොරොත්තු වෙමින්..." else "Waiting for Target acknowledgement..."
                                                     }
-                                                    if (finalStatus == "processed" || finalStatus == "failed") return@repeat
+                                                    if (finalStatus == "processed" || finalStatus == "failed") break
                                                 }
                                                 if (finalStatus == "sent") {
                                                     wakeStatusMessage = if (sinhala) "Firebase පණිවිඩය භාරගත්තා; Target ලැබීම තවම තහවුරු නැහැ." else "Firebase accepted the message; Target receipt is not confirmed yet."
