@@ -2601,6 +2601,7 @@ internal fun NexusApp(accessToken: String) {
                             }
                         }
                     }
+                    }
 
                     // SETTINGS
 
