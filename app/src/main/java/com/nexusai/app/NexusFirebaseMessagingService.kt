@@ -265,7 +265,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 }
 
 internal object NexusFcm {
-    private const val BACKEND = "https://nexus-ai-backend-six.vercel.app"
+    private val BACKEND = BuildConfig.NEXUS_API_BASE_URL.trimEnd('/')
 
     suspend fun registerCurrentInstallation(
         context: android.content.Context,
