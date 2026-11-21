@@ -290,6 +290,7 @@ internal fun NexusApp(accessToken: String) {
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isControllerBuild = BuildConfig.NEXUS_DEVICE_ROLE == "controller"
 
     var themeMode by remember {
         mutableStateOf(
@@ -510,6 +511,7 @@ internal fun NexusApp(accessToken: String) {
     var deviceRequestBusy by remember { mutableStateOf(false) }
     val pairedDevices = remember { mutableStateListOf<JSONObject>() }
     var deviceListLoaded by remember { mutableStateOf(false) }
+    var wakeStatusMessage by remember { mutableStateOf("") }
 
     var prompt by remember {
         mutableStateOf("")
@@ -2138,6 +2140,7 @@ internal fun NexusApp(accessToken: String) {
                                         "Sign in with the same NEXUS account on your second phone and use the pairing code. Codes expire after 5 minutes.",
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                if (isControllerBuild) {
                                 Button(
                                     enabled = !deviceRequestBusy,
                                     onClick = {
@@ -2177,6 +2180,8 @@ internal fun NexusApp(accessToken: String) {
                                         Text(if (sinhala) "කේතය Copy කරන්න" else "Copy code")
                                     }
                                 }
+                                }
+                                if (!isControllerBuild) {
                                 OutlinedTextField(
                                     value = deviceClaimCode,
                                     onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
@@ -2210,6 +2215,8 @@ internal fun NexusApp(accessToken: String) {
                                     shape = RoundedCornerShape(14.dp)
                                 ) {
                                     Text(if (sinhala) "මෙම දුරකථනය Pair කරන්න" else "Pair this phone")
+                                }
+                                }
                                 }
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
@@ -2277,6 +2284,7 @@ internal fun NexusApp(accessToken: String) {
                                     )
                                 } else {
                                     val uniqueDevices = pairedDevices
+                                        .filter { device -> !isControllerBuild || device.optString("device_role") == "target" }
                                         .groupBy { device ->
                                             val stableId = device.optString("device_id").ifBlank {
                                                 device.optString("deviceId")
