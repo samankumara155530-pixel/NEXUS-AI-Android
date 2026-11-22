@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - feature/controller-target-apk-split
+      - feature/consent-based-remote-camera
 
 permissions:
   contents: read
