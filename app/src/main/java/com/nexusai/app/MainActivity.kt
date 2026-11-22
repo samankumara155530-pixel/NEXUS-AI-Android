@@ -802,9 +802,15 @@ internal fun NexusApp(accessToken: String) {
                                     NexusRemoteRequestStore.clear(context)
                                     pendingRemoteRequest = null
                                     deviceStatusMessage = if (sinhala)
-                                        "ඉල්ලීම අනුමත කළා. සක්‍රිය කිරීම සඳහා අදාළ Android පහසුකම තවදුරටත් අවශ්‍ය වේ."
+                                        "ඉල්ලීම අනුමත කළා."
                                     else
-                                        "Request approved. Android's required feature-specific activation is still needed."
+                                        "Request approved."
+                                    if (request.feature == "camera") {
+                                        context.startActivity(
+                                            Intent(context, NexusCameraPreviewActivity::class.java)
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    }
                                 } catch (error: Exception) {
                                     deviceStatusMessage = (error.message ?: "Approval failed").take(120)
                                 } finally {
