@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -523,6 +524,10 @@ internal fun NexusApp(accessToken: String) {
     var deviceRequestBusy by remember { mutableStateOf(false) }
     val pairedDevices = remember { mutableStateListOf<JSONObject>() }
     var deviceListLoaded by remember { mutableStateOf(false) }
+    var pendingRemoteRequest by remember {
+        mutableStateOf(NexusRemoteRequestStore.load(context))
+    }
+    var remoteApprovalBusy by remember { mutableStateOf(false) }
 
     var prompt by remember {
         mutableStateOf("")
@@ -753,6 +758,88 @@ internal fun NexusApp(accessToken: String) {
             json
         } finally {
             connection.disconnect()
+        }
+    }
+
+    // Refresh the locally persisted request while the Target app is open.
+    LaunchedEffect(BuildConfig.NEXUS_DEVICE_ROLE) {
+        if (BuildConfig.NEXUS_DEVICE_ROLE == "target") {
+            while (true) {
+                pendingRemoteRequest = NexusRemoteRequestStore.load(context)
+                delay(1500)
+            }
+        }
+    }
+
+    pendingRemoteRequest?.let { request ->
+        if (BuildConfig.NEXUS_DEVICE_ROLE == "target") {
+            AlertDialog(
+                onDismissRequest = { },
+                title = { Text(if (sinhala) "දුරස්ථ ප්‍රවේශ ඉල්ලීමක්" else "Remote access request") },
+                text = {
+                    Text(
+                        if (sinhala)
+                            "${request.feature} පහසුකම භාවිත කිරීමට Controller දුරකථනයෙන් ඉල්ලීමක් ලැබී ඇත. ඔබ අනුමත කළහොත් පමණක් එම Session එක ආරම්භ කළ හැක."
+                        else
+                            "The Controller phone requests access to ${request.feature}. Nothing is activated unless you explicitly approve this session."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !remoteApprovalBusy,
+                        onClick = {
+                            scope.launch {
+                                remoteApprovalBusy = true
+                                try {
+                                    deviceApiPost(
+                                        "devices/remote/respond",
+                                        JSONObject()
+                                            .put("deviceId", getStableDeviceId(context))
+                                            .put("requestId", request.requestId)
+                                            .put("status", "approved")
+                                            .put("result", JSONObject().put("approval", "user_confirmed_in_app"))
+                                    )
+                                    NexusRemoteRequestStore.clear(context)
+                                    pendingRemoteRequest = null
+                                    deviceStatusMessage = if (sinhala)
+                                        "ඉල්ලීම අනුමත කළා. සක්‍රිය කිරීම සඳහා අදාළ Android පහසුකම තවදුරටත් අවශ්‍ය වේ."
+                                    else
+                                        "Request approved. Android's required feature-specific activation is still needed."
+                                } catch (error: Exception) {
+                                    deviceStatusMessage = (error.message ?: "Approval failed").take(120)
+                                } finally {
+                                    remoteApprovalBusy = false
+                                }
+                            }
+                        }
+                    ) { Text(if (sinhala) "අනුමත කරන්න" else "Approve") }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !remoteApprovalBusy,
+                        onClick = {
+                            scope.launch {
+                                remoteApprovalBusy = true
+                                try {
+                                    deviceApiPost(
+                                        "devices/remote/respond",
+                                        JSONObject()
+                                            .put("deviceId", getStableDeviceId(context))
+                                            .put("requestId", request.requestId)
+                                            .put("status", "declined")
+                                    )
+                                    NexusRemoteRequestStore.clear(context)
+                                    pendingRemoteRequest = null
+                                } catch (error: Exception) {
+                                    deviceStatusMessage = (error.message ?: "Decline failed").take(120)
+                                } finally {
+                                    remoteApprovalBusy = false
+                                }
+                            }
+                        }
+                    ) { Text(if (sinhala) "ප්‍රතික්ෂේප කරන්න" else "Decline") }
+                }
+            )
         }
     }
 
@@ -2418,8 +2505,64 @@ internal fun NexusApp(accessToken: String) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                         rowFeatures.forEach { feature ->
                                             OutlinedButton(
-                                                onClick = { deviceStatusMessage = if (sinhala) "මෙම පහසුකම තවම සකස් කරමින් පවතී." else "${feature.second} remote access is not available yet." },
-                                                enabled = false,
+                                                enabled = !deviceRequestBusy && pairedDevices.any {
+                                                    it.optString("device_role") == "target" &&
+                                                        (it.optString("revoked_at").isBlank() || it.optString("revoked_at") == "null")
+                                                },
+                                                onClick = {
+                                                    val target = pairedDevices.firstOrNull {
+                                                        it.optString("device_role") == "target" &&
+                                                            (it.optString("revoked_at").isBlank() || it.optString("revoked_at") == "null")
+                                                    }
+                                                    val targetId = target?.optString("device_id").orEmpty()
+                                                    if (targetId.isBlank()) {
+                                                        deviceStatusMessage = if (sinhala) "සක්‍රිය Target දුරකථනයක් හමු නොවීය." else "No active Target phone found."
+                                                    } else {
+                                                        scope.launch {
+                                                            deviceRequestBusy = true
+                                                            try {
+                                                                val created = deviceApiPost(
+                                                                    "devices/$targetId/remote/request",
+                                                                    JSONObject()
+                                                                        .put("controllerDeviceId", getStableDeviceId(context))
+                                                                        .put("feature", feature.third)
+                                                                )
+                                                                val requestId = created.optString("requestId")
+                                                                deviceStatusMessage = if (sinhala)
+                                                                    "${feature.second} අවසර ඉල්ලීම Target දුරකථනයට යැව්වා."
+                                                                else
+                                                                    "${feature.second} approval request sent to Target."
+                                                                repeat(30) {
+                                                                    delay(2000)
+                                                                    val status = deviceApiGet(
+                                                                        "devices/$targetId/remote/status?controllerDeviceId=${getStableDeviceId(context)}&requestId=$requestId"
+                                                                    ).optJSONObject("request")
+                                                                    when (status?.optString("status")) {
+                                                                        "approved" -> {
+                                                                            deviceStatusMessage = if (sinhala)
+                                                                                "Target පරිශීලකයා ඉල්ලීම අනුමත කළා. සජීවී මාධ්‍ය සම්බන්ධතාව වෙනම ආරම්භ කළ යුතුයි."
+                                                                            else
+                                                                                "Target user approved. The live media transport must still be started separately."
+                                                                            return@repeat
+                                                                        }
+                                                                        "declined" -> {
+                                                                            deviceStatusMessage = if (sinhala) "Target පරිශීලකයා ඉල්ලීම ප්‍රතික්ෂේප කළා." else "Target user declined the request."
+                                                                            return@repeat
+                                                                        }
+                                                                        "expired", "failed" -> {
+                                                                            deviceStatusMessage = "Remote request: ${status.optString("status")}"
+                                                                            return@repeat
+                                                                        }
+                                                                    }
+                                                                }
+                                                            } catch (error: Exception) {
+                                                                deviceStatusMessage = (error.message ?: "Remote request failed").take(120)
+                                                            } finally {
+                                                                deviceRequestBusy = false
+                                                            }
+                                                        }
+                                                    }
+                                                },
                                                 modifier = Modifier.weight(1f)
                                             ) {
                                                 Icon(feature.first, null)
