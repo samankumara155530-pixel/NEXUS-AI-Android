@@ -158,10 +158,27 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
-        if (message.data["type"] == "NEXUS_WAKE" &&
-            message.data["action"] == "SYNC_PRESENCE"
-        ) {
-            NexusPushManager.handleWake(applicationContext)
+        when {
+            message.data["type"] == "NEXUS_WAKE" &&
+                message.data["action"] == "SYNC_PRESENCE" -> {
+                NexusPushManager.handleWake(applicationContext)
+            }
+            message.data["type"] == "NEXUS_REMOTE_REQUEST" &&
+                message.data["action"] == "REQUEST_APPROVAL" -> {
+                val requestId = message.data["requestId"].orEmpty()
+                val feature = message.data["feature"].orEmpty()
+                if (requestId.isNotBlank() && feature in setOf("camera", "microphone", "gallery", "location", "screen")) {
+                    NexusRemoteRequestStore.save(
+                        applicationContext,
+                        requestId,
+                        feature,
+                        message.data["sentAt"].orEmpty()
+                    )
+                    Log.i("NexusRemote", "Consent request received for feature=$feature")
+                } else {
+                    Log.w("NexusRemote", "Rejected malformed remote request push")
+                }
+            }
         }
     }
 }
