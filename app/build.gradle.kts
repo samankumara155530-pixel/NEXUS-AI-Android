@@ -1,21 +1,47 @@
 
+val nexusApiBaseUrl = providers.environmentVariable("NEXUS_API_BASE_URL")
+    .orElse("https://nexus-ai-backend-six.vercel.app")
+    .get()
+    .trimEnd('/')
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
     namespace = "com.nexusai.app"
     compileSdk = 35
 
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    flavorDimensions += "deviceRole"
+    productFlavors {
+        create("controller") {
+            dimension = "deviceRole"
+            versionNameSuffix = "-controller"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"controller\"")
+        }
+        create("target") {
+            dimension = "deviceRole"
+            versionNameSuffix = "-target"
+            buildConfigField("String", "NEXUS_DEVICE_ROLE", "\"target\"")
+        }
+    }
+
     defaultConfig {
         applicationId = "com.nexusai.app"
         minSdk = 26
         targetSdk = 35
         // Increase versionCode for every installable update.
-        versionCode = 13
-        versionName = "1.4.7"
+        versionCode = 17
+        versionName = "1.7.0"
+        buildConfigField("String", "NEXUS_API_BASE_URL", "\"$nexusApiBaseUrl\"")
     }
 
     signingConfigs {
@@ -49,10 +75,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildFeatures {
-        compose = true
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -69,7 +91,10 @@ kotlin {
 }
 
 dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:34.0.0"))
+    implementation("com.google.firebase:firebase-messaging")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
