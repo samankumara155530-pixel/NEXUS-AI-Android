@@ -1423,7 +1423,11 @@ internal fun NexusApp(accessToken: String) {
                             onValueChange = {
                                 prompt = it
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 140.dp),
+                            minLines = 1,
+                            maxLines = 5,
                             placeholder = {
                                 Text(
                                     if (sinhala)
