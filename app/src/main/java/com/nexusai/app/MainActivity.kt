@@ -1204,6 +1204,7 @@ internal fun NexusApp(accessToken: String) {
                         )
                     )
                     .padding(padding)
+                    .then(if (tab == Tab.CHAT) Modifier.imePadding() else Modifier)
                     .padding(
                         horizontal = 14.dp,
                         vertical = 12.dp
