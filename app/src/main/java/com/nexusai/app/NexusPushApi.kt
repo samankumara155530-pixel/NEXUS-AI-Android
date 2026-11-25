@@ -42,7 +42,7 @@ internal object NexusPushApi {
             "devices/push/ack",
             accessToken,
             JSONObject()
-                .put("deviceId", getStableDeviceId(context))
+                .put("deviceId", stableDeviceId(context))
                 .put("requestId", requestId)
                 .put("stage", stage)
         )
