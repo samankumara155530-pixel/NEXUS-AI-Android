@@ -2156,6 +2156,14 @@ internal fun NexusApp(accessToken: String) {
                                                 )
                                                 devicePairCode = result.optString("pairingCode")
                                                 deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
+                                                try {
+                                                    val fcmToken = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
+                                                    withContext(Dispatchers.IO) {
+                                                        NexusPushApi.register(context, accessToken, fcmToken)
+                                                    }
+                                                } catch (_: Exception) {
+                                                    // Pairing remains successful; token registration retries on token refresh or next pairing.
+                                                }
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
@@ -2203,6 +2211,14 @@ internal fun NexusApp(accessToken: String) {
                                                 )
                                                 deviceClaimCode = ""
                                                 deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
+                                                try {
+                                                    val fcmToken = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
+                                                    withContext(Dispatchers.IO) {
+                                                        NexusPushApi.register(context, accessToken, fcmToken)
+                                                    }
+                                                } catch (_: Exception) {
+                                                    // Pairing remains successful; token registration retries on token refresh or next pairing.
+                                                }
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
                                             } finally {
