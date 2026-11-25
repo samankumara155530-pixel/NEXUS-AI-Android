@@ -8,6 +8,16 @@ import java.net.URL
 internal object NexusPushApi {
     private const val BACKEND = "https://nexus-ai-backend-six.vercel.app/"
 
+    private fun stableDeviceId(context: Context): String {
+        val prefs = context.getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE)
+        val key = "stable_device_id"
+        val existing = prefs.getString(key, null)
+        if (!existing.isNullOrBlank()) return existing
+        val created = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString(key, created).apply()
+        return created
+    }
+
     fun register(context: Context, fallbackAccessToken: String, fcmToken: String): Boolean {
         val accessToken = NexusAuthManager.refreshAccessToken(context, fallbackAccessToken)
         if (accessToken.isBlank() || fcmToken.isBlank()) return false
@@ -15,7 +25,7 @@ internal object NexusPushApi {
             "devices/push/register",
             accessToken,
             JSONObject()
-                .put("deviceId", getStableDeviceId(context))
+                .put("deviceId", stableDeviceId(context))
                 .put("fcmToken", fcmToken)
         )
     }
