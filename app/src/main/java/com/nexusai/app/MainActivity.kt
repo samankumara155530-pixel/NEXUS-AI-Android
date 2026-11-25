@@ -1427,7 +1427,7 @@ internal fun NexusApp(accessToken: String) {
                                 .fillMaxWidth()
                                 .heightIn(max = 140.dp),
                             minLines = 1,
-                            maxLines = 5,
+                            maxLines = Int.MAX_VALUE,
                             placeholder = {
                                 Text(
                                     if (sinhala)
