@@ -82,7 +82,7 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(this, CAMERA_CHANNEL_ID)
-            .setSmallIcon(R.drawable.nexus_launcher_icon)
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("NEXUS AI – Remote Camera")
             .setContentText("A paired phone is requesting camera access. Tap to review and approve or decline.")
             .setStyle(
