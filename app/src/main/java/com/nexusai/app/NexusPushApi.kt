@@ -55,7 +55,7 @@ internal object NexusPushApi {
     fun acknowledge(context: Context, requestId: String, stage: String): Boolean {
         if (requestId.isBlank() || stage !in setOf("received", "processed")) return false
         val accessToken = NexusAuthManager.restoreSession(context) ?: return false
-        return postWithRetry(
+        return post(
             "devices/push/ack",
             accessToken,
             JSONObject()
