@@ -45,7 +45,7 @@ class NexusRemoteCameraActivity : ComponentActivity() {
     private lateinit var stopButton: Button
 
     private val requestId by lazy { intent.getStringExtra(EXTRA_REQUEST_ID).orEmpty() }
-    private val accessToken by lazy { intent.getStringExtra(EXTRA_ACCESS_TOKEN).orEmpty() }
+    private var accessToken = ""
     private val handler = Handler(Looper.getMainLooper())
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
