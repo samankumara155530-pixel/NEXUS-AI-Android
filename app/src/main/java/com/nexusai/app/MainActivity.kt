@@ -2234,6 +2234,7 @@ internal fun NexusApp(accessToken: String) {
                                                     val pushRegistered = withContext(Dispatchers.IO) {
                                                         NexusPushApi.register(context, accessToken, fcmToken)
                                                     }
+                                                    pushRegistrationPending = !pushRegistered
                                                     deviceStatusMessage = if (pushRegistered) {
                                                         if (sinhala)
                                                             "දුරකථනය Pair කළා. Push සම්බන්ධතාවත් සාර්ථකයි."
@@ -2246,6 +2247,7 @@ internal fun NexusApp(accessToken: String) {
                                                             "Phone paired, but push registration is pending. Please retry."
                                                     }
                                                 } catch (_: Exception) {
+                                                    pushRegistrationPending = true
                                                     deviceStatusMessage = if (sinhala)
                                                         "දුරකථනය Pair කළා. Push සම්බන්ධතාව සකස් කළ නොහැකි වුණා; නැවත උත්සාහ කරන්න."
                                                     else
