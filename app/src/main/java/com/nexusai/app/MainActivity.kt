@@ -2159,11 +2159,25 @@ internal fun NexusApp(accessToken: String) {
                                                 deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
                                                 try {
                                                     val fcmToken = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
-                                                    withContext(Dispatchers.IO) {
+                                                    val pushRegistered = withContext(Dispatchers.IO) {
                                                         NexusPushApi.register(context, accessToken, fcmToken)
                                                     }
+                                                    deviceStatusMessage = if (pushRegistered) {
+                                                        if (sinhala)
+                                                            "කේතය මිනිත්තු 5ක් වලංගුයි. Push සම්බන්ධතාවත් සාර්ථකයි."
+                                                        else
+                                                            "Code is valid for 5 minutes. Push notifications are connected."
+                                                    } else {
+                                                        if (sinhala)
+                                                            "කේතය සාර්ථකයි. Push සම්බන්ධතාව තවම සකසා නැහැ; නැවත උත්සාහ කරන්න."
+                                                        else
+                                                            "Pairing code created. Push registration is pending; please retry."
+                                                    }
                                                 } catch (_: Exception) {
-                                                    // Pairing remains successful; token registration retries on token refresh or next pairing.
+                                                    deviceStatusMessage = if (sinhala)
+                                                        "කේතය සාර්ථකයි. Push සම්බන්ධතාව සකස් කළ නොහැකි වුණා; නැවත උත්සාහ කරන්න."
+                                                    else
+                                                        "Pairing code created, but push registration could not complete. Please retry."
                                                 }
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
@@ -2214,11 +2228,25 @@ internal fun NexusApp(accessToken: String) {
                                                 deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
                                                 try {
                                                     val fcmToken = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
-                                                    withContext(Dispatchers.IO) {
+                                                    val pushRegistered = withContext(Dispatchers.IO) {
                                                         NexusPushApi.register(context, accessToken, fcmToken)
                                                     }
+                                                    deviceStatusMessage = if (pushRegistered) {
+                                                        if (sinhala)
+                                                            "දුරකථනය Pair කළා. Push සම්බන්ධතාවත් සාර්ථකයි."
+                                                        else
+                                                            "Phone paired and push notifications are connected."
+                                                    } else {
+                                                        if (sinhala)
+                                                            "දුරකථනය Pair කළා. Push සම්බන්ධතාව තවම සකසා නැහැ; නැවත උත්සාහ කරන්න."
+                                                        else
+                                                            "Phone paired, but push registration is pending. Please retry."
+                                                    }
                                                 } catch (_: Exception) {
-                                                    // Pairing remains successful; token registration retries on token refresh or next pairing.
+                                                    deviceStatusMessage = if (sinhala)
+                                                        "දුරකථනය Pair කළා. Push සම්බන්ධතාව සකස් කළ නොහැකි වුණා; නැවත උත්සාහ කරන්න."
+                                                    else
+                                                        "Phone paired, but push registration could not complete. Please retry."
                                                 }
                                             } catch (e: Exception) {
                                                 deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
