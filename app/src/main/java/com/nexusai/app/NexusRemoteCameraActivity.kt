@@ -2,7 +2,6 @@ package com.nexusai.app
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Handler
@@ -50,11 +49,11 @@ class NexusRemoteCameraActivity : ComponentActivity() {
     private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
-    private var approved = false
-    private var closing = false
-    private var uploading = false
-    private var sequence = 0L
-    private var lensFacing = CameraSelector.LENS_FACING_BACK
+    @Volatile private var approved = false
+    @Volatile private var closing = false
+    @Volatile private var uploading = false
+    @Volatile private var sequence = 0L
+    @Volatile private var lensFacing = CameraSelector.LENS_FACING_BACK
 
     private val captureLoop = object : Runnable {
         override fun run() {
@@ -219,7 +218,14 @@ class NexusRemoteCameraActivity : ComponentActivity() {
         capture.takePicture(options, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 try {
-                    val original = BitmapFactory.decodeFile(file.absolutePath)
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(file.absolutePath, bounds)
+                    var sampleSize = 1
+                    while (bounds.outWidth / sampleSize > 960 || bounds.outHeight / sampleSize > 960) {
+                        sampleSize *= 2
+                    }
+                    val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                    val original = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
                         ?: throw IllegalStateException("JPEG_DECODE_FAILED")
                     val scale = minOf(1f, 480f / original.width.toFloat())
                     val resized = if (scale < 1f) Bitmap.createScaledBitmap(
