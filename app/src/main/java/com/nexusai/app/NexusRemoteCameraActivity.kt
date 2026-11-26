@@ -334,6 +334,8 @@ class NexusRemoteCameraActivity : ComponentActivity() {
     companion object {
         const val EXTRA_REQUEST_ID = "nexus_camera_request_id"
         const val EXTRA_ACCESS_TOKEN = "nexus_access_token"
+        const val EXTRA_CONTROLLER_DEVICE_ID = "nexus_camera_controller_device_id"
+        const val EXTRA_TARGET_DEVICE_ID = "nexus_camera_target_device_id"
         private const val FRAME_INTERVAL_MS = 1400L
     }
 }
