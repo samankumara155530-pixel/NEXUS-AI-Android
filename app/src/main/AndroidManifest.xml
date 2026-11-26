@@ -79,6 +79,16 @@
             android:name=".NexusCameraPreviewActivity"
             android:exported="false" />
 
+        <!-- Remote camera consent is always shown on the Target phone. -->
+        <activity
+            android:name=".NexusRemoteCameraActivity"
+            android:exported="false" />
+
+        <!-- Controller-side live frame viewer. -->
+        <activity
+            android:name=".NexusRemoteCameraViewerActivity"
+            android:exported="false" />
+
         <!-- MAIN ACTIVITY -->
         <activity
             android:name=".MainActivity"
