@@ -1,7 +1,6 @@
 package com.nexusai.app
 
 import android.content.Context
-import android.util.Base64
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -10,8 +9,8 @@ internal object NexusRemoteCameraApi {
     private const val BACKEND = "https://nexus-ai-backend-six.vercel.app/"
 
     private fun token(context: Context, fallback: String): String {
-        return NexusAuthManager.restoreSession(context)
-            ?: NexusAuthManager.refreshAccessToken(context, fallback)
+        if (fallback.isNotBlank()) return fallback
+        return NexusAuthManager.restoreSession(context).orEmpty()
     }
 
     fun post(context: Context, fallbackToken: String, route: String, payload: JSONObject): JSONObject {
