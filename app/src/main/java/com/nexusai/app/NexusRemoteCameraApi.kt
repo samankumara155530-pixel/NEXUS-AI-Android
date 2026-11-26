@@ -55,6 +55,28 @@ internal object NexusRemoteCameraApi {
         }
     }
 
+
+    fun getWebRtcConfig(context: Context, token: String, targetDeviceId: String, deviceId: String, requestId: String): JSONObject {
+        val route = "devices/$targetDeviceId/remote/webrtc/config?deviceId=$deviceId&requestId=$requestId"
+        return get(context, token, route)
+    }
+
+    fun sendWebRtcSignal(context: Context, token: String, targetDeviceId: String, deviceId: String, requestId: String, signalType: String, payload: JSONObject = JSONObject()): JSONObject {
+        val body = JSONObject().put("deviceId", deviceId).put("requestId", requestId)
+            .put("signalType", signalType).put("payload", payload)
+        return post(context, token, "devices/$targetDeviceId/remote/webrtc/signals", body)
+    }
+
+    fun pollWebRtcSignals(context: Context, token: String, targetDeviceId: String, deviceId: String, requestId: String): JSONObject {
+        val route = "devices/$targetDeviceId/remote/webrtc/signals?deviceId=$deviceId&requestId=$requestId"
+        return get(context, token, route)
+    }
+
+    fun heartbeatWebRtc(context: Context, token: String, targetDeviceId: String, deviceId: String, requestId: String): JSONObject {
+        val body = JSONObject().put("deviceId", deviceId).put("requestId", requestId)
+        return post(context, token, "devices/$targetDeviceId/remote/webrtc/heartbeat", body)
+    }
+
     fun uploadFrame(
         context: Context,
         accessToken: String,

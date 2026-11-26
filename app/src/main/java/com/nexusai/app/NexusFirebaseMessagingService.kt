@@ -38,12 +38,16 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 
             "NEXUS_REMOTE_REQUEST" -> {
                 val feature = data["feature"].orEmpty()
+                val controllerDeviceId = data["controllerDeviceId"].orEmpty()
+                val targetDeviceId = data["targetDeviceId"].orEmpty()
                 if (requestId.isBlank() || feature !in REMOTE_FEATURES) return
 
                 getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE)
                     .edit()
                     .putString(KEY_PENDING_REMOTE_REQUEST_ID, requestId)
                     .putString(KEY_PENDING_REMOTE_FEATURE, feature)
+                    .putString(KEY_PENDING_CONTROLLER_DEVICE_ID, controllerDeviceId)
+                    .putString(KEY_PENDING_TARGET_DEVICE_ID, targetDeviceId)
                     .apply()
 
                 Thread {
@@ -73,6 +77,8 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
 
         val openConsent = Intent(this, NexusRemoteCameraActivity::class.java).apply {
             putExtra(NexusRemoteCameraActivity.EXTRA_REQUEST_ID, requestId)
+            putExtra(NexusRemoteCameraActivity.EXTRA_CONTROLLER_DEVICE_ID, getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE).getString(KEY_PENDING_CONTROLLER_DEVICE_ID, "").orEmpty())
+            putExtra(NexusRemoteCameraActivity.EXTRA_TARGET_DEVICE_ID, getSharedPreferences("nexus_local_data", Context.MODE_PRIVATE).getString(KEY_PENDING_TARGET_DEVICE_ID, "").orEmpty())
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         val pendingIntent = PendingIntent.getActivity(
@@ -105,6 +111,8 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
         const val KEY_FCM_TOKEN = "nexus_fcm_token"
         const val KEY_PENDING_REMOTE_REQUEST_ID = "nexus_pending_remote_request_id"
         const val KEY_PENDING_REMOTE_FEATURE = "nexus_pending_remote_feature"
+        const val KEY_PENDING_CONTROLLER_DEVICE_ID = "nexus_pending_controller_device_id"
+        const val KEY_PENDING_TARGET_DEVICE_ID = "nexus_pending_target_device_id"
         const val CAMERA_CHANNEL_ID = "nexus_remote_camera_requests"
         val REMOTE_FEATURES = setOf("camera", "microphone", "gallery", "location", "screen")
     }

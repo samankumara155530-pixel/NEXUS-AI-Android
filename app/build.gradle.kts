@@ -77,6 +77,9 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.10.0")
+    // Native WebRTC engine for peer-to-peer audio/video transport.
+    implementation("io.github.webrtc-sdk:android:150.7871.08")
+
     // CameraX for the visible, permission-gated Target camera preview.
     val cameraXVersion = "1.4.2"
     implementation("androidx.camera:camera-core:$cameraXVersion")
