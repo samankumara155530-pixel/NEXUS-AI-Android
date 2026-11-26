@@ -78,6 +78,18 @@ class NexusRemoteCameraActivity : ComponentActivity() {
             return
         }
         buildUi()
+        approveButton.isEnabled = false
+        lifecycleScope.launch {
+            accessToken = withContext(Dispatchers.IO) {
+                intent.getStringExtra(EXTRA_ACCESS_TOKEN)?.takeIf { it.isNotBlank() }
+                    ?: NexusAuthManager.restoreSession(this@NexusRemoteCameraActivity).orEmpty()
+            }
+            if (accessToken.isBlank()) {
+                statusView.text = "NEXUS AI සැසිය කල් ඉකුත් වී ඇත. නැවත පිවිසෙන්න."
+            } else {
+                approveButton.isEnabled = true
+            }
+        }
     }
 
     private fun buildUi() {
@@ -230,8 +242,15 @@ class NexusRemoteCameraActivity : ComponentActivity() {
                         currentSequence
                     )
                 } catch (error: Exception) {
+                    val reason = error.message.orEmpty()
                     runOnUiThread {
-                        if (!closing) statusView.text = "දර්ශනය යැවීමේ ගැටලුවක්: ${error.message ?: "error"}"
+                        if (!closing) statusView.text = "දර්ශනය යැවීමේ ගැටලුවක්: ${reason.ifBlank { "error" }}"
+                    }
+                    if (reason.contains("CAMERA_REQUEST_NOT_ACTIVE") ||
+                        reason.contains("CAMERA_REQUEST_EXPIRED") ||
+                        reason.contains("REMOTE_REQUEST_NOT_FOUND")
+                    ) {
+                        runOnUiThread { endSession("controller_stopped_or_expired") }
                     }
                 } finally {
                     file.delete()
