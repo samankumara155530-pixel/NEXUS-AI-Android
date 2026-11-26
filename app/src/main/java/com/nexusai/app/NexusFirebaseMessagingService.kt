@@ -1,13 +1,6 @@
 package com.nexusai.app
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -47,62 +40,15 @@ class NexusFirebaseMessagingService : FirebaseMessagingService() {
                     .apply()
 
                 Thread {
+                    // Keep the request queued for the background feature handler.
+                    // Mark it processed only after the requested operation completes.
                     NexusPushApi.acknowledge(applicationContext, requestId, "received")
-                    showApprovalNotification(requestId, feature)
-                    NexusPushApi.acknowledge(applicationContext, requestId, "processed")
                 }.start()
             }
         }
     }
 
-    private fun showApprovalNotification(requestId: String, feature: String) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "NEXUS device requests",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply {
-                    description = "Requests that need approval on this device"
-                }
-            )
-        }
-
-        val openApp = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("nexus_remote_request_id", requestId)
-            putExtra("nexus_remote_feature", feature)
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            requestId.hashCode(),
-            openApp,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val label = feature.replaceFirstChar { it.uppercase() }
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("NEXUS AI – Permission request")
-            .setContentText("$label access requested. Open NEXUS AI to review.")
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText("$label access was requested by your paired NEXUS device. Open the app to review and approve or decline.")
-            )
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .build()
-
-        try {
-            NotificationManagerCompat.from(this).notify(requestId.hashCode(), notification)
-        } catch (_: SecurityException) {
-            // Notification permission may be disabled; the pending request remains saved in app storage.
-        }
-    }
-
     private companion object {
-        const val CHANNEL_ID = "nexus_device_requests"
         const val KEY_FCM_TOKEN = "nexus_fcm_token"
         const val KEY_PENDING_REMOTE_REQUEST_ID = "nexus_pending_remote_request_id"
         const val KEY_PENDING_REMOTE_FEATURE = "nexus_pending_remote_feature"
