@@ -2410,6 +2410,45 @@ internal fun NexusApp(accessToken: String) {
                                             Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
                                                 tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
                                         }
+                                        val targetId = device.optString("device_id").ifBlank { device.optString("deviceId") }
+                                        if (!revoked && device.optString("device_role") == "target" && targetId.isNotBlank()) {
+                                            OutlinedButton(
+                                                enabled = !deviceRequestBusy,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                onClick = {
+                                                    scope.launch {
+                                                        deviceRequestBusy = true
+                                                        try {
+                                                            val response = deviceApiPost(
+                                                                "devices/$targetId/remote/request",
+                                                                JSONObject()
+                                                                    .put("controllerDeviceId", getStableDeviceId(context))
+                                                                    .put("feature", "camera")
+                                                            )
+                                                            val requestId = response.optString("requestId")
+                                                            if (requestId.isBlank()) throw IllegalStateException("REMOTE_REQUEST_ID_MISSING")
+                                                            context.startActivity(
+                                                                Intent(context, NexusRemoteCameraViewerActivity::class.java).apply {
+                                                                    putExtra(NexusRemoteCameraViewerActivity.EXTRA_REQUEST_ID, requestId)
+                                                                    putExtra(NexusRemoteCameraViewerActivity.EXTRA_TARGET_DEVICE_ID, targetId)
+                                                                    putExtra(NexusRemoteCameraViewerActivity.EXTRA_CONTROLLER_DEVICE_ID, getStableDeviceId(context))
+                                                                    putExtra(NexusRemoteCameraViewerActivity.EXTRA_ACCESS_TOKEN, accessToken)
+                                                                }
+                                                            )
+                                                            deviceStatusMessage = if (sinhala) "කැමරා අවසර ඉල්ලීම යැව්වා." else "Camera consent request sent."
+                                                        } catch (error: Exception) {
+                                                            deviceStatusMessage = (error.message ?: "Camera request failed").take(120)
+                                                        } finally {
+                                                            deviceRequestBusy = false
+                                                        }
+                                                    }
+                                                }
+                                            ) {
+                                                Icon(Icons.Default.Videocam, null)
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(if (sinhala) "Remote Camera ඉල්ලන්න" else "Request Remote Camera")
+                                            }
+                                        }
                                     }
                                     if (pairedDevices.size > uniqueDevices.size) {
                                         Text(
@@ -2421,7 +2460,6 @@ internal fun NexusApp(accessToken: String) {
                                 }
                                 Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
                                 val remoteFeatures = listOf(
-                                    Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
                                     Triple(Icons.Default.Mic, if (sinhala) "මයික්" else "Microphone", "microphone"),
                                     Triple(Icons.Default.PhotoLibrary, if (sinhala) "ගැලරිය" else "Gallery", "gallery"),
                                     Triple(Icons.Default.LocationOn, if (sinhala) "ස්ථානය" else "Location", "location")
