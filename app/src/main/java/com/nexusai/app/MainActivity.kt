@@ -508,6 +508,7 @@ internal fun NexusApp(accessToken: String) {
     var devicePairCode by remember { mutableStateOf("") }
     var deviceClaimCode by remember { mutableStateOf("") }
     var deviceStatusMessage by remember { mutableStateOf("") }
+    var pushRegistrationPending by remember { mutableStateOf(false) }
     var deviceRequestBusy by remember { mutableStateOf(false) }
     val pairedDevices = remember { mutableStateListOf<JSONObject>() }
     var deviceListLoaded by remember { mutableStateOf(false) }
@@ -2162,6 +2163,7 @@ internal fun NexusApp(accessToken: String) {
                                                     val pushRegistered = withContext(Dispatchers.IO) {
                                                         NexusPushApi.register(context, accessToken, fcmToken)
                                                     }
+                                                    pushRegistrationPending = !pushRegistered
                                                     deviceStatusMessage = if (pushRegistered) {
                                                         if (sinhala)
                                                             "කේතය මිනිත්තු 5ක් වලංගුයි. Push සම්බන්ධතාවත් සාර්ථකයි."
@@ -2174,6 +2176,7 @@ internal fun NexusApp(accessToken: String) {
                                                             "Pairing code created. Push registration is pending; please retry."
                                                     }
                                                 } catch (_: Exception) {
+                                                    pushRegistrationPending = true
                                                     deviceStatusMessage = if (sinhala)
                                                         "කේතය සාර්ථකයි. Push සම්බන්ධතාව සකස් කළ නොහැකි වුණා; නැවත උත්සාහ කරන්න."
                                                     else
@@ -2262,6 +2265,40 @@ internal fun NexusApp(accessToken: String) {
                                 }
                                 if (deviceStatusMessage.isNotBlank()) {
                                     Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
+                                }
+                                if (pushRegistrationPending) {
+                                    TextButton(
+                                        enabled = !deviceRequestBusy,
+                                        onClick = {
+                                            scope.launch {
+                                                deviceRequestBusy = true
+                                                try {
+                                                    val fcmToken = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.await()
+                                                    val registered = withContext(Dispatchers.IO) {
+                                                        NexusPushApi.register(context, accessToken, fcmToken)
+                                                    }
+                                                    pushRegistrationPending = !registered
+                                                    deviceStatusMessage = if (registered) {
+                                                        if (sinhala) "Push සම්බන්ධතාව සාර්ථකව සකස් කළා."
+                                                        else "Push notifications connected successfully."
+                                                    } else {
+                                                        if (sinhala) "Push සම්බන්ධතාව තවම සකස් වී නැහැ. නැවත උත්සාහ කරන්න."
+                                                        else "Push registration is still pending. Please try again."
+                                                    }
+                                                } catch (_: Exception) {
+                                                    pushRegistrationPending = true
+                                                    deviceStatusMessage = if (sinhala)
+                                                        "Push සම්බන්ධතාව සකස් කළ නොහැකි වුණා. නැවත උත්සාහ කරන්න."
+                                                    else
+                                                        "Could not register push notifications. Please retry."
+                                                } finally {
+                                                    deviceRequestBusy = false
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Text(if (sinhala) "Push සම්බන්ධතාව නැවත උත්සාහ කරන්න" else "Retry push registration")
+                                    }
                                 }
                             }
                         }
