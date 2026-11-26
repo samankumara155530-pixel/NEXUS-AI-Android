@@ -1,6 +1,12 @@
 package com.nexusai.app
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -165,6 +171,18 @@ internal fun NexusRoot() {
     var checkingSession by remember { mutableStateOf(true) }
     var authBusy by remember { mutableStateOf(false) }
     var authMessage by remember { mutableStateOf("") }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* User choice is respected; camera sharing never starts without explicit approval. */ }
+
+    LaunchedEffect(accessToken) {
+        if (accessToken != null && Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     LaunchedEffect(Unit) {
         accessToken = withContext(Dispatchers.IO) {
