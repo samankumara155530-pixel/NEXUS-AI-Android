@@ -155,6 +155,11 @@ class NexusRemoteCameraViewerActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!stopped && accessToken.isNotBlank()) startPolling()
+    }
+
     private fun finishPolling() {
         polling = false
         handler.removeCallbacks(poll)
