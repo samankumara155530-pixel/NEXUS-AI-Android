@@ -2558,6 +2558,29 @@ internal fun NexusApp(accessToken: String) {
                         Spacer(Modifier.height(10.dp))
 
                         ToolCard(
+                            title = if (sinhala) "Camera Preview පරීක්ෂාව" else "Camera Preview Test",
+                            description = if (sinhala)
+                                "මෙම දුරකථනයේ කැමරාව අවසරයෙන් විවෘත කර ඉදිරිපස සහ පසුපස දර්ශන පරීක්ෂා කරන්න."
+                            else
+                                "Open this phone's camera with permission and test front and back previews.",
+                            icon = Icons.Default.Videocam
+                        ) {
+                            try {
+                                context.startActivity(
+                                    Intent(context, NexusCameraPreviewActivity::class.java)
+                                )
+                            } catch (error: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    if (sinhala) "Camera Preview විවෘත කළ නොහැක." else "Unable to open Camera Preview.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        ToolCard(
                             title = if (sinhala) "Gallery වෙතින් ඡායාරූපයක් තෝරන්න" else "Choose from Gallery",
                             description = if (sinhala) "දුරකථනයේ Gallery එකෙන් ඡායාරූපයක් තෝරන්න." else "Select an image from your phone's Gallery.",
                             icon = Icons.Default.PhotoLibrary
