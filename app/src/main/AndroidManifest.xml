@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n\n    <!-- Requested only when the user explicitly opens the camera preview. -->\n    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- CAMERA -->
     <uses-feature
@@ -71,7 +71,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
-        <!-- MAIN ACTIVITY -->
+        <!-- Visible local camera preview; never started by push alone. -->\n        <activity\n            android:name=".NexusCameraPreviewActivity"\n            android:exported="false" />\n\n        <!-- MAIN ACTIVITY -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
