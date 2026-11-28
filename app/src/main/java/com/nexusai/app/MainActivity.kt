@@ -78,22 +78,6 @@ private const val KEY_SCRIPTS = "saved_scripts"
 private const val KEY_MEMORIES = "nexus_smart_memories"
 private const val KEY_ALIAS = "NEXUS_AI_ENCRYPTION_KEY"
 
-private const val KEY_STABLE_DEVICE_ID = "stable_device_id"
-
-/**
- * Stable identifier for this app installation. It is generated once and kept
- * locally; it is not an IMEI, phone number, or hardware identifier.
- */
-private fun getStableDeviceId(context: Context): String {
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    val existing = prefs.getString(KEY_STABLE_DEVICE_ID, null)
-    if (!existing.isNullOrBlank()) return existing
-    val created = java.util.UUID.randomUUID().toString()
-    prefs.edit().putString(KEY_STABLE_DEVICE_ID, created).apply()
-    return created
-}
-
-
 private const val BACKEND_URL =
     "https://nexus-ai-backend-six.vercel.app/chat"
 
@@ -673,7 +657,7 @@ internal fun NexusApp(accessToken: String) {
                     val loaded = withContext(Dispatchers.IO) {
                         context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
                     } ?: throw IllegalStateException("Could not read selected image.")
-                    val scale = minOf(512f / loaded.width, 512f / loaded.height, 1f)
+                    val scale = minOf(500f / loaded.width, 500f / loaded.height, 1f)
                     val resized = if (scale < 1f) Bitmap.createScaledBitmap(
                         loaded, (loaded.width * scale).toInt().coerceAtLeast(1),
                         (loaded.height * scale).toInt().coerceAtLeast(1), true
@@ -714,24 +698,7 @@ internal fun NexusApp(accessToken: String) {
         ).show()
     }
 
-    LaunchedEffect(tab) {
-        if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
-            deviceRequestBusy = true
-            try {
-                val result = deviceApiGet("devices")
-                val list = result.optJSONArray("devices") ?: JSONArray()
-                pairedDevices.clear()
-                for (index in 0 until list.length()) {
-                    pairedDevices.add(list.optJSONObject(index) ?: JSONObject())
-                }
-                deviceListLoaded = true
-            } catch (e: Exception) {
-                deviceStatusMessage = (e.message ?: "Could not load devices").take(120)
-            } finally {
-                deviceRequestBusy = false
-            }
-        }
-    }
+
 
     // SAVE SCRIPT
 
