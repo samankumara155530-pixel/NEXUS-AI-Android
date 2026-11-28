@@ -509,6 +509,7 @@ internal fun NexusApp(accessToken: String) {
 
     var imagePrompt by remember { mutableStateOf("") }
     var imageAspectRatio by remember { mutableStateOf("1:1") }
+    var chatImageMode by remember { mutableStateOf(false) }
     var isGeneratingImage by remember { mutableStateOf(false) }
     var generatedImage by remember { mutableStateOf<Bitmap?>(null) }
     var imageGenerationMessage by remember { mutableStateOf("") }
@@ -1578,10 +1579,30 @@ internal fun NexusApp(accessToken: String) {
 
                         Spacer(Modifier.height(10.dp))
 
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilterChip(
+                                selected = !chatImageMode,
+                                onClick = { chatImageMode = false },
+                                label = { Text(if (sinhala) "චැට්" else "Chat") },
+                                leadingIcon = { Icon(Icons.Default.Chat, null) }
+                            )
+                            FilterChip(
+                                selected = chatImageMode,
+                                onClick = { chatImageMode = true },
+                                label = { Text(if (sinhala) "රූපයක් සාදන්න" else "Create image") },
+                                leadingIcon = { Icon(Icons.Default.AutoAwesome, null) }
+                            )
+                        }
+
                         OutlinedTextField(
                             value = prompt,
                             onValueChange = {
                                 prompt = it
+                                if (chatImageMode) imagePrompt = it
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1645,7 +1666,12 @@ internal fun NexusApp(accessToken: String) {
 
                         Button(
                             onClick = {
-                                sendMessage()
+                                if (chatImageMode) {
+                                    imagePrompt = prompt
+                                    generateImage()
+                                } else {
+                                    sendMessage()
+                                }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1662,7 +1688,7 @@ internal fun NexusApp(accessToken: String) {
                                     ),
                                     RoundedCornerShape(18.dp)
                                 ),
-                            enabled = prompt.isNotBlank() && !isSending,
+                            enabled = prompt.isNotBlank() && !isSending && (!chatImageMode || !isGeneratingImage),
                             shape = RoundedCornerShape(18.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color.Transparent,
@@ -1687,14 +1713,44 @@ internal fun NexusApp(accessToken: String) {
                                 Spacer(Modifier.width(8.dp))
                             }
 
-                            Icon(Icons.Default.Send, null)
+                            Icon(if (chatImageMode) Icons.Default.AutoAwesome else Icons.Default.Send, null)
 
                             Spacer(Modifier.width(8.dp))
 
                             Text(
-                                if (sinhala) "යවන්න" else "Send",
+                                if (chatImageMode) {
+                                    if (sinhala) "රූපය සාදන්න" else "Generate image"
+                                } else {
+                                    if (sinhala) "යවන්න" else "Send"
+                                },
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+
+                        if (chatImageMode && imageGenerationMessage.isNotBlank()) {
+                            Text(imageGenerationMessage, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (chatImageMode) {
+                            generatedImage?.let { bitmap ->
+                                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                                    Column(Modifier.padding(10.dp)) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = if (sinhala) "නිර්මාණය කළ රූපය" else "Generated image",
+                                            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                        )
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                            TextButton(onClick = { saveGeneratedImage(bitmap) }) {
+                                                Text(if (sinhala) "සුරකින්න" else "Save")
+                                            }
+                                            TextButton(onClick = { shareGeneratedImage(bitmap) }) {
+                                                Text(if (sinhala) "බෙදාගන්න" else "Share")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
