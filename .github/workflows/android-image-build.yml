@@ -58,6 +58,35 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
+      - name: Restore permanent NEXUS release signing key
+        env:
+          NEXUS_KEYSTORE_BASE64: ${{ secrets.NEXUS_KEYSTORE_BASE64 }}
+          NEXUS_KEYSTORE_PASSWORD: ${{ secrets.NEXUS_KEYSTORE_PASSWORD }}
+          NEXUS_KEY_ALIAS: ${{ secrets.NEXUS_KEY_ALIAS }}
+          NEXUS_KEY_PASSWORD: ${{ secrets.NEXUS_KEY_PASSWORD }}
+        run: |
+          if [ -z "$NEXUS_KEYSTORE_BASE64" ] || [ -z "$NEXUS_KEYSTORE_PASSWORD" ] || [ -z "$NEXUS_KEY_ALIAS" ] || [ -z "$NEXUS_KEY_PASSWORD" ]; then
+            echo "::error::Configure all four NEXUS_KEYSTORE_* / NEXUS_KEY_* repository secrets from the permanent signing kit."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/nexus-signing"
+          printf '%s' "$NEXUS_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nexus-signing/nexus-release.jks"
+          keytool -list -keystore "$RUNNER_TEMP/nexus-signing/nexus-release.jks" -storepass "$NEXUS_KEYSTORE_PASSWORD" -alias "$NEXUS_KEY_ALIAS" >/dev/null
+          echo "NEXUS_KEYSTORE_PATH=$RUNNER_TEMP/nexus-signing/nexus-release.jks" >> "$GITHUB_ENV"
+          echo "NEXUS_KEYSTORE_PASSWORD=$NEXUS_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "NEXUS_KEY_ALIAS=$NEXUS_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "NEXUS_KEY_PASSWORD=$NEXUS_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEXUS-AI-1.5.0-signed-release
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
