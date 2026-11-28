@@ -2419,6 +2419,12 @@ internal fun NexusApp(accessToken: String) {
                                                                     memoryRemoteIds.remove(memory)
                                                                 } catch (_: Exception) {
                                                                     memorySyncMessage = "Pending sync"
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        if (sinhala) "Cloud මතකය මැකීමට නොහැකි වුණා." else "Could not update cloud memory.",
+                                                                        Toast.LENGTH_LONG
+                                                                    ).show()
+                                                                    return@launch
                                                                 }
                                                             }
                                                             memories.remove(memory)
