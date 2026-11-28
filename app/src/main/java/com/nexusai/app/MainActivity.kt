@@ -612,54 +612,6 @@ internal fun NexusApp(accessToken: String) {
         writeStringList(context, KEY_MEMORIES, memories.toList())
     }
 
-    // Restore cloud memories and migrate any older local-only memories.
-    LaunchedEffect(accessToken) {
-        try {
-            val result = deviceApiGet("memories")
-            val remote = result.optJSONArray("memories") ?: JSONArray()
-            val restored = mutableListOf<String>()
-            val restoredIds = mutableMapOf<String, String>()
-
-            for (index in 0 until remote.length()) {
-                val item = remote.optJSONObject(index) ?: continue
-                val value = item.optString("memory").trim()
-                val id = item.optString("id")
-                if (value.isNotBlank() && restored.none { it == value }) {
-                    restored.add(value)
-                    if (id.isNotBlank()) restoredIds[value] = id
-                }
-            }
-
-            // Migrate local memories that were saved before cloud sync existed.
-            val localOnly = memories.toList().filter { it !in restored }
-            for (value in localOnly) {
-                if (restored.size >= 30) break
-                try {
-                    val saved = deviceApiPost(
-                        "memories",
-                        JSONObject().put("memory", value).put("category", "general").put("importance", 3)
-                    )
-                    val item = saved.optJSONObject("memory")
-                    val id = item?.optString("id").orEmpty()
-                    restored.add(value)
-                    if (id.isNotBlank()) restoredIds[value] = id
-                } catch (_: Exception) {
-                    // Keep unsynced local memories; the next launch retries them.
-                    restored.add(value)
-                }
-            }
-
-            memories.clear()
-            memories.addAll(restored.take(30))
-            memoryRemoteIds.clear()
-            memoryRemoteIds.putAll(restoredIds)
-            writeStringList(context, KEY_MEMORIES, memories.toList())
-            memorySyncMessage = if (localOnly.isEmpty()) "Synced" else "Synced"
-        } catch (e: Exception) {
-            // Local encrypted memories remain available offline.
-            memorySyncMessage = "Offline"
-        }
-    }
 
     var memoryText by remember {
         mutableStateOf("")
@@ -952,6 +904,56 @@ internal fun NexusApp(accessToken: String) {
             connection.disconnect()
         }
     }
+
+    // Restore cloud memories and migrate any older local-only memories.
+    LaunchedEffect(accessToken) {
+        try {
+            val result = deviceApiGet("memories")
+            val remote = result.optJSONArray("memories") ?: JSONArray()
+            val restored = mutableListOf<String>()
+            val restoredIds = mutableMapOf<String, String>()
+
+            for (index in 0 until remote.length()) {
+                val item = remote.optJSONObject(index) ?: continue
+                val value = item.optString("memory").trim()
+                val id = item.optString("id")
+                if (value.isNotBlank() && restored.none { it == value }) {
+                    restored.add(value)
+                    if (id.isNotBlank()) restoredIds[value] = id
+                }
+            }
+
+            // Migrate local memories that were saved before cloud sync existed.
+            val localOnly = memories.toList().filter { it !in restored }
+            for (value in localOnly) {
+                if (restored.size >= 30) break
+                try {
+                    val saved = deviceApiPost(
+                        "memories",
+                        JSONObject().put("memory", value).put("category", "general").put("importance", 3)
+                    )
+                    val item = saved.optJSONObject("memory")
+                    val id = item?.optString("id").orEmpty()
+                    restored.add(value)
+                    if (id.isNotBlank()) restoredIds[value] = id
+                } catch (_: Exception) {
+                    // Keep unsynced local memories; the next launch retries them.
+                    restored.add(value)
+                }
+            }
+
+            memories.clear()
+            memories.addAll(restored.take(30))
+            memoryRemoteIds.clear()
+            memoryRemoteIds.putAll(restoredIds)
+            writeStringList(context, KEY_MEMORIES, memories.toList())
+            memorySyncMessage = if (localOnly.isEmpty()) "Synced" else "Synced"
+        } catch (e: Exception) {
+            // Local encrypted memories remain available offline.
+            memorySyncMessage = "Offline"
+        }
+    }
+
 
     LaunchedEffect(tab) {
         if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
