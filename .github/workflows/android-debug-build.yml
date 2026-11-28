@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/smart-memory-sync
     paths:
       - "app/**"
       - "*.gradle.kts"
