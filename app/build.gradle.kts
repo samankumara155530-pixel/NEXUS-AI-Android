@@ -14,8 +14,8 @@ android {
         minSdk = 26
         targetSdk = 35
         // Increase versionCode for every installable update.
-        versionCode = 13
-        versionName = "1.4.7"
+        versionCode = 16
+        versionName = "1.5.0"
     }
 
     signingConfigs {
