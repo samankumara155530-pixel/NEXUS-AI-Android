@@ -599,6 +599,68 @@ internal fun NexusApp(accessToken: String) {
         mutableStateListOf<String>()
     }
 
+    val memoryRemoteIds = remember {
+        mutableStateMapOf<String, String>()
+    }
+
+    var memorySyncMessage by remember {
+        mutableStateOf("")
+    }
+
+    // Keep the encrypted local copy current, even when the network is unavailable.
+    LaunchedEffect(memories.toList()) {
+        writeStringList(context, KEY_MEMORIES, memories.toList())
+    }
+
+    // Restore cloud memories and migrate any older local-only memories.
+    LaunchedEffect(accessToken) {
+        try {
+            val result = deviceApiGet("memories")
+            val remote = result.optJSONArray("memories") ?: JSONArray()
+            val restored = mutableListOf<String>()
+            val restoredIds = mutableMapOf<String, String>()
+
+            for (index in 0 until remote.length()) {
+                val item = remote.optJSONObject(index) ?: continue
+                val value = item.optString("memory").trim()
+                val id = item.optString("id")
+                if (value.isNotBlank() && restored.none { it == value }) {
+                    restored.add(value)
+                    if (id.isNotBlank()) restoredIds[value] = id
+                }
+            }
+
+            // Migrate local memories that were saved before cloud sync existed.
+            val localOnly = memories.toList().filter { it !in restored }
+            for (value in localOnly) {
+                if (restored.size >= 30) break
+                try {
+                    val saved = deviceApiPost(
+                        "memories",
+                        JSONObject().put("memory", value).put("category", "general").put("importance", 3)
+                    )
+                    val item = saved.optJSONObject("memory")
+                    val id = item?.optString("id").orEmpty()
+                    restored.add(value)
+                    if (id.isNotBlank()) restoredIds[value] = id
+                } catch (_: Exception) {
+                    // Keep unsynced local memories; the next launch retries them.
+                    restored.add(value)
+                }
+            }
+
+            memories.clear()
+            memories.addAll(restored.take(30))
+            memoryRemoteIds.clear()
+            memoryRemoteIds.putAll(restoredIds)
+            writeStringList(context, KEY_MEMORIES, memories.toList())
+            memorySyncMessage = if (localOnly.isEmpty()) "Synced" else "Synced"
+        } catch (e: Exception) {
+            // Local encrypted memories remain available offline.
+            memorySyncMessage = "Offline"
+        }
+    }
+
     var memoryText by remember {
         mutableStateOf("")
     }
@@ -838,6 +900,32 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    suspend fun deviceApiDelete(route: String) = withContext(Dispatchers.IO) {
+        val connection = (
+            URL("https://nexus-ai-backend-six.vercel.app/$route")
+                .openConnection() as HttpURLConnection
+        )
+        try {
+            connection.requestMethod = "DELETE"
+            connection.connectTimeout = 15000
+            connection.readTimeout = 20000
+            connection.setRequestProperty(
+                "Authorization",
+                "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}"
+            )
+            connection.setRequestProperty("Accept", "application/json")
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                val json = JSONObject(response.ifBlank { "{}" })
+                throw IllegalStateException(json.optString("error", "HTTP $status"))
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun deviceApiGet(route: String): JSONObject = withContext(Dispatchers.IO) {
         val connection = (
             URL("https://nexus-ai-backend-six.vercel.app/$route")
@@ -952,13 +1040,27 @@ internal fun NexusApp(accessToken: String) {
             }
 
             memories.add(0, text)
+            writeStringList(context, KEY_MEMORIES, memories.toList())
+
+            scope.launch {
+                try {
+                    val saved = deviceApiPost(
+                        "memories",
+                        JSONObject().put("memory", text).put("category", "general").put("importance", 3)
+                    )
+                    val id = saved.optJSONObject("memory")?.optString("id").orEmpty()
+                    if (id.isNotBlank()) memoryRemoteIds[text] = id
+                } catch (_: Exception) {
+                    memorySyncMessage = "Pending sync"
+                }
+            }
 
             Toast.makeText(
                 context,
                 if (sinhala)
-                    "මතකය ආරක්ෂිතව සුරැකුවා."
+                    "මතකය දුරකථනයේ සුරැකුවා. Cloud එකට සමමුහුර්ත කරමින්..."
                 else
-                    "Memory saved securely.",
+                    "Memory saved locally. Syncing to cloud...",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -2070,35 +2172,39 @@ internal fun NexusApp(accessToken: String) {
 
                                 Button(
                                     onClick = {
-
                                         val value = memoryText.trim()
-
                                         if (value.isNotBlank()) {
-
                                             if (memories.none { it == value }) {
-
                                                 if (memories.size >= 30) {
-
                                                     Toast.makeText(
                                                         context,
-                                                        "Memory limit reached.",
+                                                        if (sinhala) "මතක සීමාව 30කි." else "Memory limit reached.",
                                                         Toast.LENGTH_LONG
                                                     ).show()
-
                                                     return@Button
                                                 }
 
+                                                // Save locally first so a temporary network failure never loses it.
                                                 memories.add(0, value)
+                                                writeStringList(context, KEY_MEMORIES, memories.toList())
+                                                scope.launch {
+                                                    try {
+                                                        val saved = deviceApiPost(
+                                                            "memories",
+                                                            JSONObject().put("memory", value).put("category", "general").put("importance", 3)
+                                                        )
+                                                        val id = saved.optJSONObject("memory")?.optString("id").orEmpty()
+                                                        if (id.isNotBlank()) memoryRemoteIds[value] = id
+                                                        memorySyncMessage = "Synced"
+                                                    } catch (_: Exception) {
+                                                        memorySyncMessage = "Pending sync"
+                                                    }
+                                                }
                                             }
-
                                             memoryText = ""
-
                                             Toast.makeText(
                                                 context,
-                                                if (sinhala)
-                                                    "මතකයට සුරැකුවා."
-                                                else
-                                                    "Memory saved.",
+                                                if (sinhala) "මතකය සුරැකුවා." else "Memory saved.",
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
@@ -2302,9 +2408,20 @@ internal fun NexusApp(accessToken: String) {
 
                                                 TextButton(
                                                     onClick = {
-
                                                         memoryText = memory
-                                                        memories.removeAt(index)
+                                                        scope.launch {
+                                                            val id = memoryRemoteIds[memory]
+                                                            if (!id.isNullOrBlank()) {
+                                                                try {
+                                                                    deviceApiDelete("memories/$id")
+                                                                    memoryRemoteIds.remove(memory)
+                                                                } catch (_: Exception) {
+                                                                    memorySyncMessage = "Pending sync"
+                                                                }
+                                                            }
+                                                            memories.remove(memory)
+                                                            writeStringList(context, KEY_MEMORIES, memories.toList())
+                                                        }
                                                     }
                                                 ) {
 
@@ -2318,7 +2435,24 @@ internal fun NexusApp(accessToken: String) {
 
                                                 TextButton(
                                                     onClick = {
-                                                        memories.removeAt(index)
+                                                        scope.launch {
+                                                            val id = memoryRemoteIds[memory]
+                                                            if (!id.isNullOrBlank()) {
+                                                                try {
+                                                                    deviceApiDelete("memories/$id")
+                                                                } catch (_: Exception) {
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        if (sinhala) "Cloud මතකය මැකීමට නොහැකි වුණා." else "Could not delete cloud memory.",
+                                                                        Toast.LENGTH_LONG
+                                                                    ).show()
+                                                                    return@launch
+                                                                }
+                                                            }
+                                                            memoryRemoteIds.remove(memory)
+                                                            memories.remove(memory)
+                                                            writeStringList(context, KEY_MEMORIES, memories.toList())
+                                                        }
                                                     }
                                                 ) {
 
