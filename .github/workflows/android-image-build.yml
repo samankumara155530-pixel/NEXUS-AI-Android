@@ -1,6 +1,9 @@
 name: NEXUS AI Image Generation Build
 
 on:
+  push:
+    branches:
+      - feature/image-generation-clean
   pull_request:
     branches:
       - main
