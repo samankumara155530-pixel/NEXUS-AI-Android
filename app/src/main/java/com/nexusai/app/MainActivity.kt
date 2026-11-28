@@ -4,6 +4,9 @@ package com.nexusai.app
 import android.Manifest
 import android.content.*
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.provider.MediaStore
@@ -18,6 +21,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
@@ -37,7 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -274,6 +280,7 @@ private fun writeStringList(
 
 private enum class Tab {
     CHAT,
+    CREATE,
     NOTES,
     SAVED,
     MEMORY,
@@ -499,6 +506,12 @@ internal fun NexusApp(accessToken: String) {
     var noteText by remember {
         mutableStateOf("")
     }
+
+    var imagePrompt by remember { mutableStateOf("") }
+    var imageAspectRatio by remember { mutableStateOf("1:1") }
+    var isGeneratingImage by remember { mutableStateOf(false) }
+    var generatedImage by remember { mutableStateOf<Bitmap?>(null) }
+    var imageGenerationMessage by remember { mutableStateOf("") }
 
     var calendarEventTitle by remember {
         mutableStateOf("")
@@ -1004,6 +1017,152 @@ internal fun NexusApp(accessToken: String) {
 
             chatMessages = chatMessages + reply
             isSending = false
+        }
+    }
+
+    // IMAGE GENERATION
+
+    fun generateImage() {
+        val cleanPrompt = imagePrompt.trim()
+        if (cleanPrompt.isEmpty() || isGeneratingImage) return
+        if (cleanPrompt.length > 1900) {
+            imageGenerationMessage = if (sinhala) "විස්තරය අක්ෂර 1900කට වඩා දිගුයි." else "Prompt must be 1900 characters or less."
+            return
+        }
+
+        isGeneratingImage = true
+        generatedImage = null
+        imageGenerationMessage = if (sinhala) "ඔබගේ රූපය නිර්මාණය කරමින්..." else "Creating your image..."
+
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val connection = (URL("https://nexus-ai-backend-six.vercel.app/generate-image")
+                        .openConnection() as HttpURLConnection)
+                    try {
+                        connection.requestMethod = "POST"
+                        connection.connectTimeout = 20000
+                        connection.readTimeout = 100000
+                        connection.doOutput = true
+                        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        connection.setRequestProperty("Accept", "application/json")
+                        connection.setRequestProperty(
+                            "Authorization",
+                            "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}"
+                        )
+                        val body = JSONObject()
+                            .put("prompt", cleanPrompt)
+                            .put("aspectRatio", imageAspectRatio)
+                        connection.outputStream.use {
+                            it.write(body.toString().toByteArray(Charsets.UTF_8))
+                        }
+                        val code = connection.responseCode
+                        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                        val responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) {
+                            val error = try {
+                                JSONObject(responseText).optString("error")
+                            } catch (_: Exception) {
+                                ""
+                            }
+                            throw IllegalStateException(error.ifBlank { "HTTP $code" })
+                        }
+                        val json = JSONObject(responseText)
+                        if (!json.optBoolean("success", false)) {
+                            throw IllegalStateException(json.optString("error").ifBlank { "Image generation failed." })
+                        }
+                        val encoded = json.optString("imageBase64")
+                        if (encoded.isBlank()) throw IllegalStateException("Image data was empty.")
+                        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            ?: throw IllegalStateException("Could not decode generated image.")
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+                generatedImage = result
+                imageGenerationMessage = if (sinhala) "රූපය සාර්ථකව නිර්මාණය කළා." else "Image generated successfully."
+            } catch (error: Exception) {
+                imageGenerationMessage = if (sinhala) {
+                    "රූපය නිර්මාණය කළ නොහැකි වුණා: ${error.localizedMessage ?: "නොදන්නා දෝෂයක්"}"
+                } else {
+                    "Could not generate image: ${error.localizedMessage ?: "Unknown error"}"
+                }
+            } finally {
+                isGeneratingImage = false
+            }
+        }
+    }
+
+    suspend fun persistGeneratedImage(bitmap: Bitmap): android.net.Uri? {
+        return withContext(Dispatchers.IO) {
+            var uri: android.net.Uri? = null
+            try {
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "NEXUS_AI_${System.currentTimeMillis()}.png")
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/NEXUS AI")
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                }
+                uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IllegalStateException("Unable to create image file.")
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                        throw IllegalStateException("Image encoding failed.")
+                    }
+                } ?: throw IllegalStateException("Unable to write image file.")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val ready = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+                    context.contentResolver.update(uri, ready, null, null)
+                }
+                uri
+            } catch (_: Exception) {
+                uri?.let { context.contentResolver.delete(it, null, null) }
+                null
+            }
+        }
+    }
+
+    fun saveGeneratedImage(bitmap: Bitmap) {
+        scope.launch {
+            val uri = persistGeneratedImage(bitmap)
+            Toast.makeText(
+                context,
+                if (uri != null) {
+                    if (sinhala) "රූපය Gallery එකට සුරැකුවා." else "Image saved to Gallery."
+                } else {
+                    if (sinhala) "රූපය සුරැකීමට නොහැකි වුණා." else "Could not save image."
+                },
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun shareGeneratedImage(bitmap: Bitmap) {
+        scope.launch {
+            val uri = persistGeneratedImage(bitmap)
+            if (uri == null) {
+                Toast.makeText(
+                    context,
+                    if (sinhala) "රූපය බෙදාගැනීමට නොහැකි වුණා." else "Could not prepare image to share.",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@launch
+            }
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = android.content.ClipData.newUri(context.contentResolver, "NEXUS AI image", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(
+                Intent.createChooser(
+                    sendIntent,
+                    if (sinhala) "රූපය බෙදාගන්න" else "Share image"
+                )
+            )
         }
     }
 
@@ -1535,6 +1694,145 @@ internal fun NexusApp(accessToken: String) {
                                 if (sinhala) "යවන්න" else "Send",
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+
+                    // IMAGE CREATION STUDIO
+
+                    Tab.CREATE -> {
+                        ScreenTitle(if (sinhala) "නිර්මාණ මැදිරිය" else "Create Studio")
+
+                        OutlinedButton(
+                            onClick = { tab = Tab.TOOLS },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Default.ArrowBack, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "මෙවලම් වෙත ආපසු" else "Back to Tools")
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.AutoAwesome, null, tint = NexusCyan, modifier = Modifier.size(28.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text(if (sinhala) "AI රූප නිර්මාණය" else "AI Image Generation", fontWeight = FontWeight.Bold)
+                                        Text(
+                                            if (sinhala) "ඔබේ අදහස රූපයක් බවට පත් කරන්න." else "Turn your idea into an image.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = imagePrompt,
+                                    onValueChange = { imagePrompt = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = 3,
+                                    maxLines = 6,
+                                    enabled = !isGeneratingImage,
+                                    label = { Text(if (sinhala) "ඔබට අවශ්‍ය රූපය විස්තර කරන්න" else "Describe the image you want") },
+                                    placeholder = {
+                                        Text(if (sinhala) "උදා: ශ්‍රී ලංකාවේ වෙරළ තීරයක හිරු බැස යන සිනමාත්මක දර්ශනයක්..." else "Example: A cinematic sunset over a tropical Sri Lankan beach...")
+                                    },
+                                    shape = RoundedCornerShape(18.dp)
+                                )
+
+                                Text(if (sinhala) "රූපයේ හැඩය" else "Aspect ratio", fontWeight = FontWeight.SemiBold)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    listOf("1:1", "16:9", "9:16").forEach { ratio ->
+                                        FilterChip(
+                                            selected = imageAspectRatio == ratio,
+                                            onClick = { imageAspectRatio = ratio },
+                                            enabled = !isGeneratingImage,
+                                            label = { Text(ratio) }
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = { generateImage() },
+                                    enabled = imagePrompt.isNotBlank() && !isGeneratingImage,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(16.dp)
+                                ) {
+                                    if (isGeneratingImage) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                    } else {
+                                        Icon(Icons.Default.AutoAwesome, null)
+                                        Spacer(Modifier.width(8.dp))
+                                    }
+                                    Text(
+                                        if (isGeneratingImage) {
+                                            if (sinhala) "නිර්මාණය කරමින්..." else "Generating..."
+                                        } else {
+                                            if (sinhala) "රූපය නිර්මාණය කරන්න" else "Generate Image"
+                                        }
+                                    )
+                                }
+
+                                if (imageGenerationMessage.isNotBlank()) {
+                                    Text(
+                                        imageGenerationMessage,
+                                        color = if (generatedImage != null) Color(0xFF39D98A) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+
+                                generatedImage?.let { bitmap ->
+                                    HorizontalDivider()
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = if (sinhala) "AI මගින් නිර්මාණය කළ රූපය" else "AI generated image",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 440.dp)
+                                            .clip(RoundedCornerShape(18.dp)),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { saveGeneratedImage(bitmap) },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.Download, null)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(if (sinhala) "සුරකින්න" else "Save")
+                                        }
+                                        OutlinedButton(
+                                            onClick = { shareGeneratedImage(bitmap) },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.Share, null)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(if (sinhala) "බෙදාගන්න" else "Share")
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -2115,6 +2413,18 @@ internal fun NexusApp(accessToken: String) {
                             Icon(Icons.Default.Checklist, null)
                             Spacer(Modifier.width(8.dp))
                             Text(if (sinhala) "ව්‍යාපෘති ප්‍රගතිය සහ වැඩ සැලැස්ම" else "Project Progress & Roadmap")
+                            Spacer(Modifier.weight(1f))
+                            Icon(Icons.Default.ChevronRight, null)
+                        }
+
+                        OutlinedButton(
+                            onClick = { tab = Tab.CREATE },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (sinhala) "AI රූප නිර්මාණ මැදිරිය" else "AI Image Creation Studio")
                             Spacer(Modifier.weight(1f))
                             Icon(Icons.Default.ChevronRight, null)
                         }
