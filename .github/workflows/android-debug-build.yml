@@ -1,4 +1,5 @@
 name: NEXUS AI Debug Build
+# Persistent signing key configured via repository Actions secret.
 
 on:
   pull_request:
