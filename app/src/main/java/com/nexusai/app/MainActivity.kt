@@ -1588,6 +1588,31 @@ internal fun NexusApp(accessToken: String) {
                             )
                         }
 
+                        if (chatImageMode) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedButton(
+                                    onClick = { galleryLauncher.launch("image/*") },
+                                    enabled = !isGeneratingImage
+                                ) {
+                                    Icon(Icons.Default.AddPhotoAlternate, null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (sinhala) "රූපයක් එක් කරන්න" else "Attach image")
+                                }
+                                referenceImagePreview?.let { preview ->
+                                    Image(
+                                        bitmap = preview.asImageBitmap(),
+                                        contentDescription = "Reference image",
+                                        modifier = Modifier.size(58.dp),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                    IconButton(onClick = {
+                                        referenceImageBase64 = null
+                                        referenceImagePreview = null
+                                    }) { Icon(Icons.Default.Close, contentDescription = "Remove image") }
+                                }
+                            }
+                        }
+
                         OutlinedTextField(
                             value = prompt,
                             onValueChange = {
@@ -1780,6 +1805,32 @@ internal fun NexusApp(accessToken: String) {
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = { galleryLauncher.launch("image/*") },
+                                    enabled = !isGeneratingImage,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.AddPhotoAlternate, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (sinhala) "Reference රූපයක් Upload කරන්න" else "Upload reference image")
+                                }
+                                referenceImagePreview?.let { preview ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Image(
+                                            bitmap = preview.asImageBitmap(),
+                                            contentDescription = if (sinhala) "තෝරාගත් Reference රූපය" else "Selected reference image",
+                                            modifier = Modifier.size(104.dp),
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(if (sinhala) "මෙම රූපය පදනම් කරගෙන නිර්මාණය කරයි" else "This image will guide the generation", modifier = Modifier.weight(1f))
+                                        IconButton(onClick = {
+                                            referenceImageBase64 = null
+                                            referenceImagePreview = null
+                                        }) { Icon(Icons.Default.Close, contentDescription = "Remove image") }
                                     }
                                 }
 
