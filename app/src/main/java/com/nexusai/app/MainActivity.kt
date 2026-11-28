@@ -509,10 +509,15 @@ internal fun NexusApp(accessToken: String) {
 
     var imagePrompt by remember { mutableStateOf("") }
     var imageAspectRatio by remember { mutableStateOf("1:1") }
+    var imageQuality by remember { mutableStateOf("standard") }
     var chatImageMode by remember { mutableStateOf(false) }
     var isGeneratingImage by remember { mutableStateOf(false) }
     var generatedImage by remember { mutableStateOf<Bitmap?>(null) }
     var imageGenerationMessage by remember { mutableStateOf("") }
+    var lastGeneratedPrompt by remember { mutableStateOf("") }
+    var lastGeneratedRatio by remember { mutableStateOf("1:1") }
+    var lastGeneratedQuality by remember { mutableStateOf("standard") }
+    val imageHistory = remember { mutableStateListOf<String>().apply { addAll(readStringList(context, "nexus_image_history")) } }
 
     var calendarEventTitle by remember {
         mutableStateOf("")
@@ -1033,6 +1038,9 @@ internal fun NexusApp(accessToken: String) {
 
         isGeneratingImage = true
         generatedImage = null
+        lastGeneratedPrompt = cleanPrompt
+        lastGeneratedRatio = imageAspectRatio
+        lastGeneratedQuality = imageQuality
         imageGenerationMessage = if (sinhala) "ඔබගේ රූපය නිර්මාණය කරමින්..." else "Creating your image..."
 
         scope.launch {
@@ -1051,8 +1059,13 @@ internal fun NexusApp(accessToken: String) {
                             "Authorization",
                             "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}"
                         )
+                        val qualityGuidance = when (imageQuality) {
+                            "high" -> "High detail, intricate textures, refined lighting, carefully rendered details."
+                            "cinematic" -> "Premium cinematic visual quality, dramatic professional lighting, rich composition, highly refined details."
+                            else -> "Balanced clean image quality with clear subject and natural details."
+                        }
                         val body = JSONObject()
-                            .put("prompt", cleanPrompt)
+                            .put("prompt", "$cleanPrompt\n\nImage quality guidance: $qualityGuidance")
                             .put("aspectRatio", imageAspectRatio)
                         connection.outputStream.use {
                             it.write(body.toString().toByteArray(Charsets.UTF_8))
@@ -1082,6 +1095,29 @@ internal fun NexusApp(accessToken: String) {
                     }
                 }
                 generatedImage = result
+                try {
+                    val fileName = "nexus_image_${System.currentTimeMillis()}.png"
+                    val imageFile = java.io.File(context.filesDir, fileName)
+                    imageFile.outputStream().use { output ->
+                        if (!result.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                            throw IllegalStateException("Image history save failed")
+                        }
+                    }
+                    val entry = JSONObject()
+                        .put("file", fileName)
+                        .put("prompt", cleanPrompt)
+                        .put("ratio", imageAspectRatio)
+                        .put("quality", imageQuality)
+                        .put("createdAt", System.currentTimeMillis())
+                    imageHistory.add(0, entry.toString())
+                    while (imageHistory.size > 30) {
+                        val removed = JSONObject(imageHistory.removeAt(imageHistory.lastIndex))
+                        context.deleteFile(removed.optString("file"))
+                    }
+                    writeStringList(context, "nexus_image_history", imageHistory.toList())
+                } catch (_: Exception) {
+                    // Keep the generated image available even if local history storage fails.
+                }
                 imageGenerationMessage = if (sinhala) "රූපය සාර්ථකව නිර්මාණය කළා." else "Image generated successfully."
             } catch (error: Exception) {
                 imageGenerationMessage = if (sinhala) {
@@ -1822,6 +1858,25 @@ internal fun NexusApp(accessToken: String) {
                                     }
                                 }
 
+                                Text(if (sinhala) "රූපයේ ගුණාත්මකභාවය" else "Image quality", fontWeight = FontWeight.SemiBold)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    listOf(
+                                        "standard" to (if (sinhala) "සාමාන්‍ය" else "Standard"),
+                                        "high" to (if (sinhala) "උසස්" else "High detail"),
+                                        "cinematic" to (if (sinhala) "සිනමාත්මක" else "Cinematic")
+                                    ).forEach { (value, label) ->
+                                        FilterChip(
+                                            selected = imageQuality == value,
+                                            onClick = { imageQuality = value },
+                                            enabled = !isGeneratingImage,
+                                            label = { Text(label) }
+                                        )
+                                    }
+                                }
+
                                 Button(
                                     onClick = { generateImage() },
                                     enabled = imagePrompt.isNotBlank() && !isGeneratingImage,
@@ -1846,6 +1901,67 @@ internal fun NexusApp(accessToken: String) {
                                             if (sinhala) "රූපය නිර්මාණය කරන්න" else "Generate Image"
                                         }
                                     )
+                                }
+
+                                if (generatedImage != null && !isGeneratingImage) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            imagePrompt = lastGeneratedPrompt
+                                            imageAspectRatio = lastGeneratedRatio
+                                            imageQuality = lastGeneratedQuality
+                                            generateImage()
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.Refresh, null)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(if (sinhala) "නැවත නිර්මාණය කරන්න" else "Regenerate")
+                                    }
+                                }
+
+                                if (imageHistory.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    Text(if (sinhala) "පෙර නිර්මාණ" else "Image history", fontWeight = FontWeight.Bold)
+                                    imageHistory.take(10).forEach { raw ->
+                                        val entry = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                entry.optString("prompt").take(55),
+                                                modifier = Modifier.weight(1f),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 2
+                                            )
+                                            TextButton(onClick = {
+                                                val file = java.io.File(context.filesDir, entry.optString("file"))
+                                                val restored = if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+                                                if (restored != null) {
+                                                    generatedImage = restored
+                                                    imagePrompt = entry.optString("prompt")
+                                                    imageAspectRatio = entry.optString("ratio", "1:1")
+                                                    imageQuality = entry.optString("quality", "standard")
+                                                    lastGeneratedPrompt = imagePrompt
+                                                    lastGeneratedRatio = imageAspectRatio
+                                                    lastGeneratedQuality = imageQuality
+                                                    imageGenerationMessage = if (sinhala) "ඉතිහාසයෙන් රූපය විවෘත කළා." else "Restored from history."
+                                                } else {
+                                                    imageGenerationMessage = if (sinhala) "මෙම රූප ගොනුව හමු නොවීය." else "Image file not found."
+                                                }
+                                            }) { Text(if (sinhala) "විවෘත" else "Open") }
+                                            TextButton(onClick = {
+                                                imagePrompt = entry.optString("prompt")
+                                                imageAspectRatio = entry.optString("ratio", "1:1")
+                                                imageQuality = entry.optString("quality", "standard")
+                                                lastGeneratedPrompt = imagePrompt
+                                                lastGeneratedRatio = imageAspectRatio
+                                                lastGeneratedQuality = imageQuality
+                                                generateImage()
+                                            }) { Icon(Icons.Default.Refresh, null) }
+                                        }
+                                    }
                                 }
 
                                 if (imageGenerationMessage.isNotBlank()) {
