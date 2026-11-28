@@ -1561,7 +1561,7 @@ internal fun NexusApp(accessToken: String) {
                                     onClick = { galleryLauncher.launch("image/*") },
                                     enabled = !isGeneratingImage
                                 ) {
-                                    Icon(Icons.Default.AddPhotoAlternate, null)
+                                    Icon(Icons.Default.PhotoLibrary, null)
                                     Spacer(Modifier.width(6.dp))
                                     Text(if (sinhala) "රූපයක් එක් කරන්න" else "Attach image")
                                 }
@@ -1780,7 +1780,7 @@ internal fun NexusApp(accessToken: String) {
                                     enabled = !isGeneratingImage,
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Icon(Icons.Default.AddPhotoAlternate, null)
+                                    Icon(Icons.Default.PhotoLibrary, null)
                                     Spacer(Modifier.width(8.dp))
                                     Text(if (sinhala) "Reference රූපයක් Upload කරන්න" else "Upload reference image")
                                 }
