@@ -67,6 +67,7 @@ private val InkBlue = Color(0xFF142746)
 
 private const val PREFS_NAME = "nexus_local_data"
 private const val KEY_CHAT = "chat_messages"
+private const val KEY_CHAT_HISTORY = "chat_conversations_v1"
 private const val KEY_NOTES = "notes"
 private const val KEY_SCRIPTS = "saved_scripts"
 private const val KEY_MEMORIES = "nexus_smart_memories"
@@ -272,13 +273,117 @@ private fun writeStringList(
 
 // NAVIGATION
 
+private data class ChatConversation(
+    val id: String,
+    val title: String,
+    val messages: List<String>,
+    val updatedAt: Long
+)
+
+private fun createChatTitle(messages: List<String>): String {
+    val firstUserMessage = messages.firstOrNull {
+        it.startsWith("ඔබ: ") || it.startsWith("You: ")
+    }?.removePrefix("ඔබ: ")?.removePrefix("You: ")?.trim().orEmpty()
+
+    if (firstUserMessage.isBlank()) return "නව සංවාදය"
+
+    return if (firstUserMessage.length > 42) {
+        firstUserMessage.take(42).trimEnd() + "…"
+    } else {
+        firstUserMessage
+    }
+}
+
+private fun loadChatConversations(context: Context): List<ChatConversation> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val encryptedHistory = prefs.getString(KEY_CHAT_HISTORY, null)
+
+    if (!encryptedHistory.isNullOrBlank()) {
+        try {
+            val array = JSONArray(decryptData(encryptedHistory))
+            val conversations = mutableListOf<ChatConversation>()
+
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val messagesArray = item.optJSONArray("messages") ?: JSONArray()
+                val messages = List(messagesArray.length()) {
+                    messagesArray.optString(it)
+                }
+
+                if (messages.isNotEmpty()) {
+                    conversations.add(
+                        ChatConversation(
+                            id = item.optString("id").ifBlank {
+                                java.util.UUID.randomUUID().toString()
+                            },
+                            title = item.optString("title").ifBlank {
+                                createChatTitle(messages)
+                            },
+                            messages = messages,
+                            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+            }
+
+            if (conversations.isNotEmpty()) {
+                return conversations.sortedByDescending { it.updatedAt }
+            }
+        } catch (_: Exception) {
+            // Fall back to the previous single-chat storage without deleting it.
+        }
+    }
+
+    // One-time migration: preserve the existing conversation as the first history item.
+    val oldMessages = readStringList(context, KEY_CHAT).ifEmpty {
+        listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙")
+    }
+
+    return listOf(
+        ChatConversation(
+            id = java.util.UUID.randomUUID().toString(),
+            title = createChatTitle(oldMessages),
+            messages = oldMessages,
+            updatedAt = System.currentTimeMillis()
+        )
+    )
+}
+
+private fun saveChatConversations(
+    context: Context,
+    conversations: List<ChatConversation>
+) {
+    try {
+        val array = JSONArray()
+
+        conversations.forEach { conversation ->
+            val messages = JSONArray()
+            conversation.messages.forEach { messages.put(it) }
+
+            array.put(
+                JSONObject()
+                    .put("id", conversation.id)
+                    .put("title", conversation.title)
+                    .put("updatedAt", conversation.updatedAt)
+                    .put("messages", messages)
+            )
+        }
+
+        val encrypted = encryptData(array.toString())
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CHAT_HISTORY, encrypted)
+            .apply()
+    } catch (_: Exception) {
+        // Keep the last successfully saved encrypted conversation history.
+    }
+}
+
 private enum class Tab {
     CHAT,
     NOTES,
     SAVED,
     MEMORY,
-    TOOLS,
-    PROGRESS,
     SETTINGS
 }
 
@@ -492,6 +597,20 @@ internal fun NexusApp(accessToken: String) {
         mutableStateListOf<String>()
     }
 
+    val memoryRemoteIds = remember {
+        mutableStateMapOf<String, String>()
+    }
+
+    var memorySyncMessage by remember {
+        mutableStateOf("")
+    }
+
+    // Keep the encrypted local copy current, even when the network is unavailable.
+    LaunchedEffect(memories.toList()) {
+        writeStringList(context, KEY_MEMORIES, memories.toList())
+    }
+
+
     var memoryText by remember {
         mutableStateOf("")
     }
@@ -519,33 +638,48 @@ internal fun NexusApp(accessToken: String) {
         mutableStateOf(false)
     }
 
+    var chatHistory by remember {
+        mutableStateOf(loadChatConversations(context))
+    }
+
+    var currentChatId by remember {
+        mutableStateOf(chatHistory.first().id)
+    }
+
     var chatMessages by remember {
-        mutableStateOf(
-            readStringList(context, KEY_CHAT).ifEmpty {
-                listOf(
-                    "NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙"
-                )
-            }
-        )
+        mutableStateOf(chatHistory.first().messages)
+    }
+
+    var showChatHistory by remember {
+        mutableStateOf(false)
     }
 
     val chatState = rememberLazyListState()
 
-    // SAVE CHAT
+    // SAVE THE ACTIVE CHAT AND THE ENCRYPTED CHAT HISTORY
 
-    LaunchedEffect(chatMessages) {
-
-        writeStringList(
-            context,
-            KEY_CHAT,
-            chatMessages
+    LaunchedEffect(chatMessages, currentChatId) {
+        val activeConversation = ChatConversation(
+            id = currentChatId,
+            title = createChatTitle(chatMessages),
+            messages = chatMessages,
+            updatedAt = System.currentTimeMillis()
         )
 
+        chatHistory = (
+            chatHistory.filterNot { it.id == currentChatId } + activeConversation
+        ).sortedByDescending { it.updatedAt }
+
+        // Keep the legacy active-chat key for backward compatibility.
+        writeStringList(context, KEY_CHAT, chatMessages)
+
         if (chatMessages.isNotEmpty()) {
-            chatState.animateScrollToItem(
-                chatMessages.lastIndex
-            )
+            chatState.animateScrollToItem(chatMessages.lastIndex)
         }
+    }
+
+    LaunchedEffect(chatHistory) {
+        saveChatConversations(context, chatHistory)
     }
 
     LaunchedEffect(notes.toList()) {
@@ -716,6 +850,32 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    suspend fun deviceApiDelete(route: String) = withContext(Dispatchers.IO) {
+        val connection = (
+            URL("https://nexus-ai-backend-six.vercel.app/$route")
+                .openConnection() as HttpURLConnection
+        )
+        try {
+            connection.requestMethod = "DELETE"
+            connection.connectTimeout = 15000
+            connection.readTimeout = 20000
+            connection.setRequestProperty(
+                "Authorization",
+                "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}"
+            )
+            connection.setRequestProperty("Accept", "application/json")
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                val json = JSONObject(response.ifBlank { "{}" })
+                throw IllegalStateException(json.optString("error", "HTTP $status"))
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     suspend fun deviceApiGet(route: String): JSONObject = withContext(Dispatchers.IO) {
         val connection = (
             URL("https://nexus-ai-backend-six.vercel.app/$route")
@@ -743,24 +903,55 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
-    LaunchedEffect(tab) {
-        if (tab == Tab.TOOLS && !deviceListLoaded && !deviceRequestBusy) {
-            deviceRequestBusy = true
-            try {
-                val result = deviceApiGet("devices")
-                val list = result.optJSONArray("devices") ?: JSONArray()
-                pairedDevices.clear()
-                for (index in 0 until list.length()) {
-                    pairedDevices.add(list.optJSONObject(index) ?: JSONObject())
+    // Restore cloud memories and migrate any older local-only memories.
+    LaunchedEffect(accessToken) {
+        try {
+            val result = deviceApiGet("memories")
+            val remote = result.optJSONArray("memories") ?: JSONArray()
+            val restored = mutableListOf<String>()
+            val restoredIds = mutableMapOf<String, String>()
+
+            for (index in 0 until remote.length()) {
+                val item = remote.optJSONObject(index) ?: continue
+                val value = item.optString("memory").trim()
+                val id = item.optString("id")
+                if (value.isNotBlank() && restored.none { it == value }) {
+                    restored.add(value)
+                    if (id.isNotBlank()) restoredIds[value] = id
                 }
-                deviceListLoaded = true
-            } catch (e: Exception) {
-                deviceStatusMessage = (e.message ?: "Could not load devices").take(120)
-            } finally {
-                deviceRequestBusy = false
             }
+
+            // Migrate local memories that were saved before cloud sync existed.
+            val localOnly = memories.toList().filter { it !in restored }
+            for (value in localOnly) {
+                if (restored.size >= 30) break
+                try {
+                    val saved = deviceApiPost(
+                        "memories",
+                        JSONObject().put("memory", value).put("category", "general").put("importance", 3)
+                    )
+                    val item = saved.optJSONObject("memory")
+                    val id = item?.optString("id").orEmpty()
+                    restored.add(value)
+                    if (id.isNotBlank()) restoredIds[value] = id
+                } catch (_: Exception) {
+                    // Keep unsynced local memories; the next launch retries them.
+                    restored.add(value)
+                }
+            }
+
+            memories.clear()
+            memories.addAll(restored.take(30))
+            memoryRemoteIds.clear()
+            memoryRemoteIds.putAll(restoredIds)
+            writeStringList(context, KEY_MEMORIES, memories.toList())
+            memorySyncMessage = if (localOnly.isEmpty()) "Synced" else "Synced"
+        } catch (e: Exception) {
+            // Local encrypted memories remain available offline.
+            memorySyncMessage = "Offline"
         }
     }
+
 
     // SAVE SCRIPT
 
@@ -830,18 +1021,61 @@ internal fun NexusApp(accessToken: String) {
             }
 
             memories.add(0, text)
+            writeStringList(context, KEY_MEMORIES, memories.toList())
+
+            scope.launch {
+                try {
+                    val saved = deviceApiPost(
+                        "memories",
+                        JSONObject().put("memory", text).put("category", "general").put("importance", 3)
+                    )
+                    val id = saved.optJSONObject("memory")?.optString("id").orEmpty()
+                    if (id.isNotBlank()) memoryRemoteIds[text] = id
+                } catch (_: Exception) {
+                    memorySyncMessage = "Pending sync"
+                }
+            }
 
             Toast.makeText(
                 context,
                 if (sinhala)
-                    "මතකය ආරක්ෂිතව සුරැකුවා."
+                    "මතකය දුරකථනයේ සුරැකුවා. Cloud එකට සමමුහුර්ත කරමින්..."
                 else
-                    "Memory saved securely.",
+                    "Memory saved locally. Syncing to cloud...",
                 Toast.LENGTH_SHORT
             ).show()
         }
 
         pendingMemories.remove(text)
+    }
+
+    // NEW CHAT AND CHAT HISTORY
+
+    fun startNewChat() {
+        if (isSending) return
+
+        val newConversation = ChatConversation(
+            id = java.util.UUID.randomUUID().toString(),
+            title = "නව සංවාදය",
+            messages = listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙"),
+            updatedAt = System.currentTimeMillis()
+        )
+
+        chatHistory = chatHistory + newConversation
+        currentChatId = newConversation.id
+        chatMessages = newConversation.messages
+        prompt = ""
+        showChatHistory = false
+    }
+
+    fun openChatConversation(conversation: ChatConversation) {
+        if (isSending) return
+
+        currentChatId = conversation.id
+        chatMessages = conversation.messages
+        prompt = ""
+        showChatHistory = false
+        tab = Tab.CHAT
     }
 
     // SEND CHAT
@@ -1144,22 +1378,6 @@ internal fun NexusApp(accessToken: String) {
                     )
 
                     NavigationBarItem(
-                        selected = tab == Tab.TOOLS,
-                        onClick = { tab = Tab.TOOLS },
-                        icon = { Icon(Icons.Default.Build, null) },
-                        label = {
-                            Text(if (sinhala) "මෙවලම්" else "Tools", fontWeight = FontWeight.SemiBold)
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = NexusCyan,
-                            selectedTextColor = NexusCyan,
-                            indicatorColor = NexusBlue.copy(alpha = 0.22f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-
-                    NavigationBarItem(
                         selected = tab == Tab.SETTINGS,
                         onClick = { tab = Tab.SETTINGS },
                         icon = { Icon(Icons.Default.Settings, null) },
@@ -1178,6 +1396,71 @@ internal fun NexusApp(accessToken: String) {
             }
 
         ) { padding ->
+
+            if (showChatHistory) {
+                AlertDialog(
+                    onDismissRequest = { showChatHistory = false },
+                    title = {
+                        Text(if (sinhala) "චැට් ඉතිහාසය" else "Chat History")
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 420.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            chatHistory
+                                .sortedByDescending { it.updatedAt }
+                                .forEach { conversation ->
+                                    TextButton(
+                                        onClick = {
+                                            openChatConversation(conversation)
+                                        },
+                                        enabled = !isSending,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                conversation.title,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1
+                                            )
+                                            Spacer(Modifier.height(3.dp))
+                                            Text(
+                                                conversation.messages.lastOrNull().orEmpty()
+                                                    .take(76),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 2
+                                            )
+                                            Text(
+                                                if (sinhala) {
+                                                    "${conversation.messages.size} පණිවිඩ"
+                                                } else {
+                                                    "${conversation.messages.size} messages"
+                                                },
+                                                color = NexusCyan,
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showChatHistory = false }) {
+                            Text(if (sinhala) "වසන්න" else "Close")
+                        }
+                    }
+                )
+            }
 
             Column(
                 modifier = Modifier
@@ -1285,6 +1568,31 @@ internal fun NexusApp(accessToken: String) {
                                         )
                                     }
                                 }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showChatHistory = true },
+                                enabled = !isSending,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.History, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (sinhala) "පැරණි චැට්" else "History")
+                            }
+
+                            Button(
+                                onClick = { startNewChat() },
+                                enabled = !isSending,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (sinhala) "අලුත් චැට්" else "New Chat")
                             }
                         }
 
@@ -1829,35 +2137,39 @@ internal fun NexusApp(accessToken: String) {
 
                                 Button(
                                     onClick = {
-
                                         val value = memoryText.trim()
-
                                         if (value.isNotBlank()) {
-
                                             if (memories.none { it == value }) {
-
                                                 if (memories.size >= 30) {
-
                                                     Toast.makeText(
                                                         context,
-                                                        "Memory limit reached.",
+                                                        if (sinhala) "මතක සීමාව 30කි." else "Memory limit reached.",
                                                         Toast.LENGTH_LONG
                                                     ).show()
-
                                                     return@Button
                                                 }
 
+                                                // Save locally first so a temporary network failure never loses it.
                                                 memories.add(0, value)
+                                                writeStringList(context, KEY_MEMORIES, memories.toList())
+                                                scope.launch {
+                                                    try {
+                                                        val saved = deviceApiPost(
+                                                            "memories",
+                                                            JSONObject().put("memory", value).put("category", "general").put("importance", 3)
+                                                        )
+                                                        val id = saved.optJSONObject("memory")?.optString("id").orEmpty()
+                                                        if (id.isNotBlank()) memoryRemoteIds[value] = id
+                                                        memorySyncMessage = "Synced"
+                                                    } catch (_: Exception) {
+                                                        memorySyncMessage = "Pending sync"
+                                                    }
+                                                }
                                             }
-
                                             memoryText = ""
-
                                             Toast.makeText(
                                                 context,
-                                                if (sinhala)
-                                                    "මතකයට සුරැකුවා."
-                                                else
-                                                    "Memory saved.",
+                                                if (sinhala) "මතකය සුරැකුවා." else "Memory saved.",
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         }
@@ -2061,9 +2373,26 @@ internal fun NexusApp(accessToken: String) {
 
                                                 TextButton(
                                                     onClick = {
-
                                                         memoryText = memory
-                                                        memories.removeAt(index)
+                                                        scope.launch {
+                                                            val id = memoryRemoteIds[memory]
+                                                            if (!id.isNullOrBlank()) {
+                                                                try {
+                                                                    deviceApiDelete("memories/$id")
+                                                                    memoryRemoteIds.remove(memory)
+                                                                } catch (_: Exception) {
+                                                                    memorySyncMessage = "Pending sync"
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        if (sinhala) "Cloud මතකය මැකීමට නොහැකි වුණා." else "Could not update cloud memory.",
+                                                                        Toast.LENGTH_LONG
+                                                                    ).show()
+                                                                    return@launch
+                                                                }
+                                                            }
+                                                            memories.remove(memory)
+                                                            writeStringList(context, KEY_MEMORIES, memories.toList())
+                                                        }
                                                     }
                                                 ) {
 
@@ -2077,7 +2406,24 @@ internal fun NexusApp(accessToken: String) {
 
                                                 TextButton(
                                                     onClick = {
-                                                        memories.removeAt(index)
+                                                        scope.launch {
+                                                            val id = memoryRemoteIds[memory]
+                                                            if (!id.isNullOrBlank()) {
+                                                                try {
+                                                                    deviceApiDelete("memories/$id")
+                                                                } catch (_: Exception) {
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        if (sinhala) "Cloud මතකය මැකීමට නොහැකි වුණා." else "Could not delete cloud memory.",
+                                                                        Toast.LENGTH_LONG
+                                                                    ).show()
+                                                                    return@launch
+                                                                }
+                                                            }
+                                                            memoryRemoteIds.remove(memory)
+                                                            memories.remove(memory)
+                                                            writeStringList(context, KEY_MEMORIES, memories.toList())
+                                                        }
                                                     }
                                                 ) {
 
@@ -2096,503 +2442,7 @@ internal fun NexusApp(accessToken: String) {
                         }
                     }
 
-                    // TOOLS
-
-                    Tab.TOOLS -> {
-
-                        ScreenTitle(
-                            if (sinhala)
-                                "NEXUS මෙවලම්"
-                            else
-                                "NEXUS Tools"
-                        )
-
-                        OutlinedButton(
-                            onClick = { tab = Tab.PROGRESS },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Icon(Icons.Default.Checklist, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (sinhala) "ව්‍යාපෘති ප්‍රගතිය සහ වැඩ සැලැස්ම" else "Project Progress & Roadmap")
-                            Spacer(Modifier.weight(1f))
-                            Icon(Icons.Default.ChevronRight, null)
-                        }
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(22.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Devices, null, tint = NexusCyan)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        if (sinhala) "NEXUS Device Link" else "NEXUS Device Link",
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Text(
-                                    if (sinhala)
-                                        "දෙවන දුරකථනයේත් එකම NEXUS ගිණුමෙන් ඇතුළු වී Pair කිරීමේ කේතය භාවිත කරන්න. කේතය මිනිත්තු 5කින් කල් ඉකුත් වේ."
-                                    else
-                                        "Sign in with the same NEXUS account on your second phone and use the pairing code. Codes expire after 5 minutes.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Button(
-                                    enabled = !deviceRequestBusy,
-                                    onClick = {
-                                        scope.launch {
-                                            deviceRequestBusy = true
-                                            try {
-                                                val result = deviceApiPost(
-                                                    "devices/pair/start",
-                                                    JSONObject()
-                                                        .put("deviceName", android.os.Build.MODEL)
-                                                        .put("deviceId", getStableDeviceId(context))
-                                                )
-                                                devicePairCode = result.optString("pairingCode")
-                                                deviceStatusMessage = if (sinhala) "කේතය මිනිත්තු 5ක් වලංගුයි." else "Code is valid for 5 minutes."
-                                            } catch (e: Exception) {
-                                                deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
-                                            } finally {
-                                                deviceRequestBusy = false
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Icon(Icons.Default.QrCode, null)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(if (sinhala) "Pairing කේතයක් ලබාගන්න" else "Generate pairing code")
-                                }
-                                if (devicePairCode.isNotBlank()) {
-                                    Text(
-                                        devicePairCode,
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = NexusCyan
-                                    )
-                                    TextButton(onClick = { copyText(devicePairCode) }) {
-                                        Text(if (sinhala) "කේතය Copy කරන්න" else "Copy code")
-                                    }
-                                }
-                                OutlinedTextField(
-                                    value = deviceClaimCode,
-                                    onValueChange = { deviceClaimCode = it.filter(Char::isDigit).take(8) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    label = { Text(if (sinhala) "අනෙක් දුරකථනයේ Pairing කේතය" else "Pairing code from other phone") }
-                                )
-                                OutlinedButton(
-                                    enabled = !deviceRequestBusy && deviceClaimCode.length == 8,
-                                    onClick = {
-                                        scope.launch {
-                                            deviceRequestBusy = true
-                                            try {
-                                                deviceApiPost(
-                                                    "devices/pair/claim",
-                                                    JSONObject()
-                                                        .put("pairingCode", deviceClaimCode)
-                                                        .put("deviceName", android.os.Build.MODEL)
-                                                        .put("deviceId", getStableDeviceId(context))
-                                                )
-                                                deviceClaimCode = ""
-                                                deviceStatusMessage = if (sinhala) "දුරකථනය සාර්ථකව Pair කළා." else "Phone paired successfully."
-                                            } catch (e: Exception) {
-                                                deviceStatusMessage = (e.message ?: "Pairing failed").take(120)
-                                            } finally {
-                                                deviceRequestBusy = false
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Text(if (sinhala) "මෙම දුරකථනය Pair කරන්න" else "Pair this phone")
-                                }
-                                if (deviceStatusMessage.isNotBlank()) {
-                                    Text(deviceStatusMessage, color = MaterialTheme.colorScheme.secondary)
-                                }
-                            }
-                        }
-
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(22.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Devices, null, tint = NexusCyan)
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        if (sinhala) "සම්බන්ධ කළ දුරකථන" else "Paired devices",
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    TextButton(
-                                        enabled = !deviceRequestBusy,
-                                        onClick = {
-                                            scope.launch {
-                                                deviceRequestBusy = true
-                                                try {
-                                                    val result = deviceApiGet("devices")
-                                                    val list = result.optJSONArray("devices") ?: JSONArray()
-                                                    pairedDevices.clear()
-                                                    for (index in 0 until list.length()) {
-                                                        pairedDevices.add(list.optJSONObject(index) ?: JSONObject())
-                                                    }
-                                                    deviceListLoaded = true
-                                                    deviceStatusMessage = if (sinhala) "දුරකථන ලැයිස්තුව යාවත්කාලීන කළා." else "Device list refreshed."
-                                                } catch (e: Exception) {
-                                                    deviceStatusMessage = (e.message ?: "Could not load devices").take(120)
-                                                } finally {
-                                                    deviceRequestBusy = false
-                                                }
-                                            }
-                                        }
-                                    ) {
-                                        Icon(Icons.Default.Refresh, null)
-                                        Spacer(Modifier.width(4.dp))
-                                        Text(if (sinhala) "Refresh" else "Refresh")
-                                    }
-                                }
-                                if (!deviceListLoaded) {
-                                    Text(
-                                        if (sinhala) "ඔබගේ සම්බන්ධ කළ දුරකථන බැලීමට Refresh ඔබන්න." else "Tap Refresh to load devices linked to your account.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                } else if (pairedDevices.isEmpty()) {
-                                    Text(
-                                        if (sinhala) "තවම සම්බන්ධ කළ දුරකථන නැහැ." else "No paired devices found.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                } else {
-                                    val uniqueDevices = pairedDevices
-                                        .groupBy { device ->
-                                            val stableId = device.optString("device_id").ifBlank {
-                                                device.optString("deviceId")
-                                            }
-                                            if (stableId.isNotBlank() && stableId != "null") {
-                                                "device:" + stableId
-                                            } else {
-                                                // Legacy server records have no stable installation ID.
-                                                // Keep their old grouping until the backend migration is deployed.
-                                                device.optString("device_name", "NEXUS Android").trim().lowercase() +
-                                                    "|" + device.optString("platform", "android").lowercase()
-                                            }
-                                        }
-                                        .values
-                                        .map { duplicates -> duplicates.maxByOrNull { it.optString("created_at") } ?: duplicates.first() }
-                                    uniqueDevices.forEach { device ->
-                                        val revoked = !device.isNull("revoked_at") && !device.optString("revoked_at").equals("null", true)
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp))
-                                                .padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Default.Smartphone, null, tint = NexusCyan)
-                                            Spacer(Modifier.width(10.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(device.optString("device_name", "NEXUS Android"), fontWeight = FontWeight.SemiBold)
-                                                Text(
-                                                    device.optString("platform", "Android") +
-                                                        if (revoked) " • " + (if (sinhala) "අවලංගුයි" else "Revoked")
-                                                        else " • " + (if (sinhala) "සම්බන්ධයි" else "Paired"),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = if (revoked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
-                                                )
-                                                val lastSeen = device.optString("last_seen_at", "")
-                                                if (lastSeen.isNotBlank() && lastSeen != "null") {
-                                                    Text((if (sinhala) "අවසන් වරට: " else "Last seen: ") + lastSeen,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.secondary)
-                                                }
-                                            }
-                                            Icon(if (revoked) Icons.Default.Block else Icons.Default.CheckCircle, null,
-                                                tint = if (revoked) MaterialTheme.colorScheme.error else Color(0xFF35B779))
-                                        }
-                                    }
-                                    if (pairedDevices.size > uniqueDevices.size) {
-                                        Text(
-                                            if (sinhala) "එකම නම සහිත අනුපිටපත් ${pairedDevices.size - uniqueDevices.size}ක් සඟවා ඇත." else "${pairedDevices.size - uniqueDevices.size} duplicate entries with the same device name were grouped.",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.secondary
-                                        )
-                                    }
-                                }
-                                Text(if (sinhala) "දුරස්ථ පහසුකම්" else "Remote features", fontWeight = FontWeight.Bold)
-                                val remoteFeatures = listOf(
-                                    Triple(Icons.Default.Videocam, if (sinhala) "කැමරා" else "Camera", "camera"),
-                                    Triple(Icons.Default.Mic, if (sinhala) "මයික්" else "Microphone", "microphone"),
-                                    Triple(Icons.Default.PhotoLibrary, if (sinhala) "ගැලරිය" else "Gallery", "gallery"),
-                                    Triple(Icons.Default.LocationOn, if (sinhala) "ස්ථානය" else "Location", "location")
-                                )
-                                remoteFeatures.chunked(2).forEach { rowFeatures ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                        rowFeatures.forEach { feature ->
-                                            OutlinedButton(
-                                                onClick = { deviceStatusMessage = if (sinhala) "මෙම පහසුකම තවම සකස් කරමින් පවතී." else "${feature.second} remote access is not available yet." },
-                                                enabled = false,
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                Icon(feature.first, null)
-                                                Spacer(Modifier.width(6.dp))
-                                                Text(feature.second)
-                                            }
-                                        }
-                                        if (rowFeatures.size == 1) Spacer(Modifier.weight(1f))
-                                    }
-                                }
-                                Text(
-                                    if (sinhala) "මෙය සම්බන්ධ කළ උපාංග ලැයිස්තුවයි. Remote Screen පාලනය තවම සක්‍රිය කර නැත." else "This is your paired-device list. Remote screen control is not enabled yet.",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
-                        }
-
-                        OutlinedTextField(
-                            value = calendarEventTitle,
-                            onValueChange = { calendarEventTitle = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = {
-                                Text(if (sinhala) "සිදුවීමේ නම" else "Event title")
-                            },
-                            placeholder = {
-                                Text(if (sinhala) "උදා: වෛද්‍ය හමුව" else "e.g. Doctor appointment")
-                            }
-                        )
-
-                        Spacer(Modifier.height(8.dp))
-
-                        ToolCard(
-                            title = if (sinhala)
-                                "දිනදර්ශන සිදුවීමක් එක් කරන්න"
-                            else
-                                "Add Calendar Event",
-
-                            description = if (sinhala)
-                                "දුරකථනයේ Calendar එකට නව සිදුවීමක් එක් කරන්න."
-                            else
-                                "Create an event in your phone's Calendar.",
-
-                            icon = Icons.Default.CalendarMonth
-                        ) {
-
-                            try {
-                                val start = System.currentTimeMillis() + 60 * 60 * 1000
-                                val end = start + 60 * 60 * 1000
-
-                                val calendarIntent = Intent(Intent.ACTION_INSERT).apply {
-                                    setDataAndType(
-                                        CalendarContract.Events.CONTENT_URI,
-                                        "vnd.android.cursor.item/event"
-                                    )
-                                    putExtra(
-                                        CalendarContract.Events.TITLE,
-                                        calendarEventTitle.trim().ifBlank { "NEXUS AI Event" }
-                                    )
-                                    putExtra(
-                                        CalendarContract.Events.DESCRIPTION,
-                                        "Added using NEXUS AI."
-                                    )
-                                    putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start)
-                                    putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end)
-                                }
-
-                                Toast.makeText(
-                                    context,
-                                    if (sinhala) "Calendar Event පෝරමය විවෘත කරමින්..." else "Opening Calendar event form...",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-
-                                // Launch directly; package visibility can hide resolveActivity results.
-                                context.startActivity(
-                                    Intent.createChooser(
-                                        calendarIntent,
-                                        if (sinhala) "Calendar යෙදුම තෝරන්න" else "Choose Calendar app"
-                                    )
-                                )
-                            } catch (e: ActivityNotFoundException) {
-                                Toast.makeText(
-                                    context,
-                                    if (sinhala) "Calendar යෙදුමක් හමු වුණේ නැහැ." else "No compatible Calendar app found.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    if (sinhala) "Calendar දෝෂයක් ඇති වුණා. නැවත උත්සාහ කරන්න." else "Calendar error. Please try again.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-
-                        ToolCard(
-                            title = "Camera",
-
-                            description = if (sinhala)
-                                "දුරකථනයේ Camera යෙදුම විවෘත කරන්න."
-                            else
-                                "Open your phone's Camera.",
-
-                            icon = Icons.Default.CameraAlt
-                        ) {
-
-                            try {
-
-                                cameraLauncher.launch(
-                                    Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-                                )
-
-                            } catch (_: Exception) {
-
-                                Toast.makeText(
-                                    context,
-                                    "Camera unavailable.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-
-                        ToolCard(
-                            title = if (sinhala) "Gallery වෙතින් ඡායාරූපයක් තෝරන්න" else "Choose from Gallery",
-                            description = if (sinhala) "දුරකථනයේ Gallery එකෙන් ඡායාරූපයක් තෝරන්න." else "Select an image from your phone's Gallery.",
-                            icon = Icons.Default.PhotoLibrary
-                        ) {
-                            try {
-                                galleryLauncher.launch("image/*")
-                            } catch (_: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    if (sinhala) "Gallery විවෘත කළ නොහැක." else "Gallery is unavailable.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                    }
-
                     // SETTINGS
-
-                    Tab.PROGRESS -> {
-                        val roadmap = listOf(
-                            if (sinhala) "Stable Device ID සහ Duplicate ගැටලුව ස්ථිරව විසඳීම" else "Stable Device ID and permanent duplicate fix",
-                            if (sinhala) "Camera සහ Microphone වෙන වෙනම පාලනය" else "Independent Camera and Microphone controls",
-                            if (sinhala) "Background Connection Service" else "Background Connection Service",
-                            if (sinhala) "Wi-Fi සහ Mobile Data Auto Reconnection" else "Wi-Fi and Mobile Data auto-reconnection",
-                            if (sinhala) "Remote Camera – Front / Back / Live Preview / Photo" else "Remote Camera – Front / Back / Live Preview / Photo",
-                            if (sinhala) "Remote Microphone – වෙනම Audio Session" else "Remote Microphone – independent audio session",
-                            if (sinhala) "Screen Sharing සහ Remote Control" else "Screen Sharing and Remote Control",
-                            if (sinhala) "Gallery සහ Files Access" else "Gallery and Files Access",
-                            if (sinhala) "Location සහ Notifications" else "Location and Notifications",
-                            if (sinhala) "Security, Permissions සහ සම්පූර්ණ පරීක්ෂණ" else "Security, Permissions and full testing"
-                        )
-                        val implementationStatus = listOf(
-                            Triple(if (sinhala) "Device Pairing සහ Backend" else "Device Pairing and Backend", if (sinhala) "පවතිනවා" else "Present", true),
-                            Triple(if (sinhala) "Tools / Paired Devices Dashboard" else "Tools / Paired Devices Dashboard", if (sinhala) "මූලික UI එක පවතී" else "Basic UI present", true),
-                            Triple(if (sinhala) "Stable Device ID සහ Duplicate නිවැරදි කිරීම" else "Stable Device ID and duplicate fix", if (sinhala) "Client ID එක එකතු කළා; Backend ඉතිරියි" else "Client ID added; backend pending", false),
-                            Triple(if (sinhala) "Background Connection Service" else "Background Connection Service", if (sinhala) "Backend heartbeat පසු" else "After backend heartbeat", false),
-                            Triple(if (sinhala) "Remote Camera සහ Photo Capture" else "Remote Camera and Photo Capture", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
-                            Triple(if (sinhala) "Independent Remote Microphone" else "Independent Remote Microphone", if (sinhala) "තවම ක්‍රියාත්මක කර නැත" else "Not implemented yet", false),
-                            Triple(if (sinhala) "Screen Sharing / Remote Control" else "Screen Sharing / Remote Control", if (sinhala) "සැලසුම් අදියර" else "Planned", false),
-                            Triple(if (sinhala) "Gallery / Files / Location / Notifications" else "Gallery / Files / Location / Notifications", if (sinhala) "සැලසුම් අදියර" else "Planned", false)
-                        )
-                        val roadmapPrefs = remember { context.getSharedPreferences("nexus_roadmap_progress", Context.MODE_PRIVATE) }
-                        val completed = remember {
-                            mutableStateListOf<Int>().apply {
-                                addAll((roadmapPrefs.getStringSet("completed_items", emptySet()) ?: emptySet())
-                                    .mapNotNull { it.toIntOrNull() }
-                                    .filter { it in roadmap.indices })
-                            }
-                        }
-                        ScreenTitle(if (sinhala) "NEXUS ව්‍යාපෘති ප්‍රගතිය" else "NEXUS Project Progress")
-                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text(if (sinhala) "සැබෑ සංවර්ධන තත්ත්වය" else "Implementation Status", fontWeight = FontWeight.Bold)
-                                implementationStatus.forEach { item ->
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        Icon(
-                                            if (item.third) Icons.Default.CheckCircle else Icons.Default.Schedule,
-                                            null,
-                                            tint = if (item.third) Color(0xFF35B779) else MaterialTheme.colorScheme.secondary
-                                        )
-                                        Spacer(Modifier.width(10.dp))
-                                        Text(item.first, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                                        Text(item.second, style = MaterialTheme.typography.labelSmall, color = if (item.third) Color(0xFF35B779) else MaterialTheme.colorScheme.secondary)
-                                    }
-                                }
-                                Text(
-                                    if (sinhala) "මෙම තත්ත්වයන් කේතය පරීක්ෂා කර සකස් කළ මූලික වාර්තාවකි; Build සහ දුරකථන පරීක්ෂණවලින් පසුව පමණක් අවසන් බව තහවුරු කරමු." else "This is a conservative code-review snapshot; final completion requires successful builds and device testing.",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
-                        }
-
-                        Text(
-                            if (sinhala) "අපගේ Remote Control වැඩ සැලැස්ම මෙතැනින් නිරීක්ෂණය කරන්න." else "Track the NEXUS Remote Control roadmap here.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(if (sinhala) "සම්පූර්ණයි" else "Completed", fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.weight(1f))
-                                    Text("${completed.size}/${roadmap.size}", color = NexusCyan, fontWeight = FontWeight.Bold)
-                                }
-                                LinearProgressIndicator(
-                                    progress = { completed.size.toFloat() / roadmap.size.toFloat() },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = NexusCyan
-                                )
-                                roadmap.forEachIndexed { index, item ->
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        Checkbox(
-                                            checked = index in completed,
-                                            onCheckedChange = { checked ->
-                                                if (checked && index !in completed) completed.add(index)
-                                                else completed.remove(index)
-                                                roadmapPrefs.edit()
-                                                    .putStringSet("completed_items", completed.map { it.toString() }.toSet())
-                                                    .apply()
-                                            }
-                                        )
-                                        Text(item, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                    if (index != roadmap.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                                }
-                                Text(
-                                    if (sinhala) "ඔබගේ සලකුණු මෙම දුරකථනයේ ස්ථිරව සුරැකේ. ඒවා GitHub හි වැඩ අවසන් බව ස්වයංක්‍රීයව තහවුරු නොකරයි." else "Your checkmarks are saved on this device and do not automatically verify implementation status in GitHub.",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
-                        }
-                        OutlinedButton(onClick = { tab = Tab.TOOLS }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.ArrowBack, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(if (sinhala) "මෙවලම් වෙත ආපසු" else "Back to Tools")
-                        }
-                    }
 
                     Tab.SETTINGS -> {
 
