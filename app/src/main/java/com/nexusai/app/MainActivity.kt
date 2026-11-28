@@ -67,6 +67,7 @@ private val InkBlue = Color(0xFF142746)
 
 private const val PREFS_NAME = "nexus_local_data"
 private const val KEY_CHAT = "chat_messages"
+private const val KEY_CHAT_HISTORY = "chat_conversations_v1"
 private const val KEY_NOTES = "notes"
 private const val KEY_SCRIPTS = "saved_scripts"
 private const val KEY_MEMORIES = "nexus_smart_memories"
@@ -271,6 +272,112 @@ private fun writeStringList(
 }
 
 // NAVIGATION
+
+private data class ChatConversation(
+    val id: String,
+    val title: String,
+    val messages: List<String>,
+    val updatedAt: Long
+)
+
+private fun createChatTitle(messages: List<String>): String {
+    val firstUserMessage = messages.firstOrNull {
+        it.startsWith("ඔබ: ") || it.startsWith("You: ")
+    }?.removePrefix("ඔබ: ")?.removePrefix("You: ")?.trim().orEmpty()
+
+    if (firstUserMessage.isBlank()) return "නව සංවාදය"
+
+    return if (firstUserMessage.length > 42) {
+        firstUserMessage.take(42).trimEnd() + "…"
+    } else {
+        firstUserMessage
+    }
+}
+
+private fun loadChatConversations(context: Context): List<ChatConversation> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val encryptedHistory = prefs.getString(KEY_CHAT_HISTORY, null)
+
+    if (!encryptedHistory.isNullOrBlank()) {
+        try {
+            val array = JSONArray(decryptData(encryptedHistory))
+            val conversations = mutableListOf<ChatConversation>()
+
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val messagesArray = item.optJSONArray("messages") ?: JSONArray()
+                val messages = List(messagesArray.length()) {
+                    messagesArray.optString(it)
+                }
+
+                if (messages.isNotEmpty()) {
+                    conversations.add(
+                        ChatConversation(
+                            id = item.optString("id").ifBlank {
+                                java.util.UUID.randomUUID().toString()
+                            },
+                            title = item.optString("title").ifBlank {
+                                createChatTitle(messages)
+                            },
+                            messages = messages,
+                            updatedAt = item.optLong("updatedAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+            }
+
+            if (conversations.isNotEmpty()) {
+                return conversations.sortedByDescending { it.updatedAt }
+            }
+        } catch (_: Exception) {
+            // Fall back to the previous single-chat storage without deleting it.
+        }
+    }
+
+    // One-time migration: preserve the existing conversation as the first history item.
+    val oldMessages = readStringList(context, KEY_CHAT).ifEmpty {
+        listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙")
+    }
+
+    return listOf(
+        ChatConversation(
+            id = java.util.UUID.randomUUID().toString(),
+            title = createChatTitle(oldMessages),
+            messages = oldMessages,
+            updatedAt = System.currentTimeMillis()
+        )
+    )
+}
+
+private fun saveChatConversations(
+    context: Context,
+    conversations: List<ChatConversation>
+) {
+    try {
+        val array = JSONArray()
+
+        conversations.forEach { conversation ->
+            val messages = JSONArray()
+            conversation.messages.forEach { messages.put(it) }
+
+            array.put(
+                JSONObject()
+                    .put("id", conversation.id)
+                    .put("title", conversation.title)
+                    .put("updatedAt", conversation.updatedAt)
+                    .put("messages", messages)
+            )
+        }
+
+        val encrypted = encryptData(array.toString())
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CHAT_HISTORY, encrypted)
+            .apply()
+    } catch (_: Exception) {
+        // Keep the last successfully saved encrypted conversation history.
+    }
+}
 
 private enum class Tab {
     CHAT,
@@ -519,33 +626,48 @@ internal fun NexusApp(accessToken: String) {
         mutableStateOf(false)
     }
 
+    var chatHistory by remember {
+        mutableStateOf(loadChatConversations(context))
+    }
+
+    var currentChatId by remember {
+        mutableStateOf(chatHistory.first().id)
+    }
+
     var chatMessages by remember {
-        mutableStateOf(
-            readStringList(context, KEY_CHAT).ifEmpty {
-                listOf(
-                    "NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙"
-                )
-            }
-        )
+        mutableStateOf(chatHistory.first().messages)
+    }
+
+    var showChatHistory by remember {
+        mutableStateOf(false)
     }
 
     val chatState = rememberLazyListState()
 
-    // SAVE CHAT
+    // SAVE THE ACTIVE CHAT AND THE ENCRYPTED CHAT HISTORY
 
-    LaunchedEffect(chatMessages) {
-
-        writeStringList(
-            context,
-            KEY_CHAT,
-            chatMessages
+    LaunchedEffect(chatMessages, currentChatId) {
+        val activeConversation = ChatConversation(
+            id = currentChatId,
+            title = createChatTitle(chatMessages),
+            messages = chatMessages,
+            updatedAt = System.currentTimeMillis()
         )
 
+        chatHistory = (
+            chatHistory.filterNot { it.id == currentChatId } + activeConversation
+        ).sortedByDescending { it.updatedAt }
+
+        // Keep the legacy active-chat key for backward compatibility.
+        writeStringList(context, KEY_CHAT, chatMessages)
+
         if (chatMessages.isNotEmpty()) {
-            chatState.animateScrollToItem(
-                chatMessages.lastIndex
-            )
+            chatState.animateScrollToItem(chatMessages.lastIndex)
         }
+    }
+
+    LaunchedEffect(chatHistory) {
+        saveChatConversations(context, chatHistory)
     }
 
     LaunchedEffect(notes.toList()) {
@@ -842,6 +964,35 @@ internal fun NexusApp(accessToken: String) {
         }
 
         pendingMemories.remove(text)
+    }
+
+    // NEW CHAT AND CHAT HISTORY
+
+    fun startNewChat() {
+        if (isSending) return
+
+        val newConversation = ChatConversation(
+            id = java.util.UUID.randomUUID().toString(),
+            title = "නව සංවාදය",
+            messages = listOf("NEXUS AI වෙත සාදරයෙන් පිළිගනිමු! 💙"),
+            updatedAt = System.currentTimeMillis()
+        )
+
+        chatHistory = chatHistory + newConversation
+        currentChatId = newConversation.id
+        chatMessages = newConversation.messages
+        prompt = ""
+        showChatHistory = false
+    }
+
+    fun openChatConversation(conversation: ChatConversation) {
+        if (isSending) return
+
+        currentChatId = conversation.id
+        chatMessages = conversation.messages
+        prompt = ""
+        showChatHistory = false
+        tab = Tab.CHAT
     }
 
     // SEND CHAT
@@ -1179,6 +1330,71 @@ internal fun NexusApp(accessToken: String) {
 
         ) { padding ->
 
+            if (showChatHistory) {
+                AlertDialog(
+                    onDismissRequest = { showChatHistory = false },
+                    title = {
+                        Text(if (sinhala) "චැට් ඉතිහාසය" else "Chat History")
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 420.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            chatHistory
+                                .sortedByDescending { it.updatedAt }
+                                .forEach { conversation ->
+                                    TextButton(
+                                        onClick = {
+                                            openChatConversation(conversation)
+                                        },
+                                        enabled = !isSending,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                conversation.title,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1
+                                            )
+                                            Spacer(Modifier.height(3.dp))
+                                            Text(
+                                                conversation.messages.lastOrNull().orEmpty()
+                                                    .take(76),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                maxLines = 2
+                                            )
+                                            Text(
+                                                if (sinhala) {
+                                                    "${conversation.messages.size} පණිවිඩ"
+                                                } else {
+                                                    "${conversation.messages.size} messages"
+                                                },
+                                                color = NexusCyan,
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showChatHistory = false }) {
+                            Text(if (sinhala) "වසන්න" else "Close")
+                        }
+                    }
+                )
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1285,6 +1501,31 @@ internal fun NexusApp(accessToken: String) {
                                         )
                                     }
                                 }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showChatHistory = true },
+                                enabled = !isSending,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.History, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (sinhala) "පැරණි චැට්" else "History")
+                            }
+
+                            Button(
+                                onClick = { startNewChat() },
+                                enabled = !isSending,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (sinhala) "අලුත් චැට්" else "New Chat")
                             }
                         }
 
