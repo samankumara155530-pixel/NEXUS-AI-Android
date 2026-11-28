@@ -500,6 +500,9 @@ internal fun NexusApp(accessToken: String) {
     var isGeneratingImage by remember { mutableStateOf(false) }
     var generatedImage by remember { mutableStateOf<Bitmap?>(null) }
     var imageGenerationMessage by remember { mutableStateOf("") }
+    var imageUsage by remember { mutableStateOf<JSONObject?>(null) }
+    var isLoadingImageUsage by remember { mutableStateOf(false) }
+    var imageUsageError by remember { mutableStateOf("") }
     var lastGeneratedPrompt by remember { mutableStateOf("") }
     var lastGeneratedRatio by remember { mutableStateOf("1:1") }
     var lastGeneratedQuality by remember { mutableStateOf("standard") }
@@ -945,6 +948,39 @@ internal fun NexusApp(accessToken: String) {
         }
     }
 
+    fun refreshImageUsage() {
+        if (isLoadingImageUsage) return
+        isLoadingImageUsage = true
+        imageUsageError = ""
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val connection = (URL("https://nexus-ai-backend-six.vercel.app/image-usage")
+                        .openConnection() as HttpURLConnection)
+                    try {
+                        connection.requestMethod = "GET"
+                        connection.connectTimeout = 15000
+                        connection.readTimeout = 20000
+                        connection.setRequestProperty("Accept", "application/json")
+                        connection.setRequestProperty("Authorization", "Bearer ${NexusAuthManager.refreshAccessToken(context, accessToken)}")
+                        val code = connection.responseCode
+                        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) {
+                            val message = try { JSONObject(body).optString("error") } catch (_: Exception) { "" }
+                            throw IllegalStateException(message.ifBlank { "HTTP $code" })
+                        }
+                        JSONObject(body).takeIf { it.optBoolean("success", false) }
+                            ?: throw IllegalStateException("Usage data unavailable")
+                    } finally { connection.disconnect() }
+                }
+                imageUsage = result
+            } catch (e: Exception) {
+                imageUsageError = e.localizedMessage ?: "Usage unavailable"
+            } finally { isLoadingImageUsage = false }
+        }
+    }
+
     // IMAGE GENERATION
 
     fun generateImage() {
@@ -1040,6 +1076,7 @@ internal fun NexusApp(accessToken: String) {
                     // Keep the generated image available even if local history storage fails.
                 }
                 imageGenerationMessage = if (sinhala) "රූපය සාර්ථකව නිර්මාණය කළා." else "Image generated successfully."
+                refreshImageUsage()
             } catch (error: Exception) {
                 imageGenerationMessage = if (sinhala) {
                     "රූපය නිර්මාණය කළ නොහැකි වුණා: ${error.localizedMessage ?: "නොදන්නා දෝෂයක්"}"
@@ -1762,6 +1799,45 @@ internal fun NexusApp(accessToken: String) {
                                 modifier = Modifier.padding(18.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
+                                LaunchedEffect(Unit) { refreshImageUsage() }
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+                                    shape = RoundedCornerShape(18.dp)
+                                ) {
+                                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.DataUsage, null)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(if (sinhala) "Cloudflare දෛනික AI Neurons" else "Cloudflare Daily AI Neurons", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                            IconButton(onClick = { refreshImageUsage() }, enabled = !isLoadingImageUsage) {
+                                                if (isLoadingImageUsage) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                                else Icon(Icons.Default.Refresh, contentDescription = "Refresh usage")
+                                            }
+                                        }
+                                        val usage = imageUsage
+                                        if (usage != null) {
+                                            val used = usage.optDouble("usedNeurons", 0.0)
+                                            val remaining = usage.optDouble("remainingNeurons", 0.0)
+                                            val total = usage.optDouble("dailyFreeNeurons", 10000.0)
+                                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Column {
+                                                    Text(if (sinhala) "භාවිත කළ ප්‍රමාණය" else "Used", style = MaterialTheme.typography.labelSmall)
+                                                    Text(String.format(java.util.Locale.US, "%,.0f", used), fontWeight = FontWeight.Bold)
+                                                }
+                                                Column(horizontalAlignment = Alignment.End) {
+                                                    Text(if (sinhala) "ඉතිරි ප්‍රමාණය" else "Remaining", style = MaterialTheme.typography.labelSmall)
+                                                    Text(String.format(java.util.Locale.US, "%,.0f", remaining), fontWeight = FontWeight.Bold, color = Color(0xFF39D98A))
+                                                }
+                                            }
+                                            LinearProgressIndicator(progress = { (used / total).toFloat().coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                                            Text(String.format(java.util.Locale.US, "%.1f%% used • %,.0f / day", usage.optDouble("usagePercent", 0.0), total), style = MaterialTheme.typography.bodySmall)
+                                            Text(if (sinhala) "මෙය Cloudflare ගිණුමේ සියලු Workers AI භාවිතයයි. Analytics දත්ත යාවත්කාලීන වීමට ප්‍රමාදයක් තිබිය හැක." else "Account-wide Workers AI usage. Analytics data may be delayed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        } else {
+                                            Text(if (imageUsageError.isNotBlank()) "Usage unavailable: $imageUsageError" else if (sinhala) "Usage දත්ත ලබාගනිමින්..." else "Loading usage...", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.AutoAwesome, null, tint = NexusCyan, modifier = Modifier.size(28.dp))
                                     Spacer(Modifier.width(10.dp))
