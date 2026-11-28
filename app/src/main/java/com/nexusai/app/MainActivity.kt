@@ -1106,18 +1106,19 @@ internal fun NexusApp(accessToken: String) {
                         put(MediaStore.Images.Media.IS_PENDING, 1)
                     }
                 }
-                uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                val imageUri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                     ?: throw IllegalStateException("Unable to create image file.")
-                context.contentResolver.openOutputStream(uri)?.use { output ->
+                uri = imageUri
+                context.contentResolver.openOutputStream(imageUri)?.use { output ->
                     if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
                         throw IllegalStateException("Image encoding failed.")
                     }
                 } ?: throw IllegalStateException("Unable to write image file.")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val ready = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-                    context.contentResolver.update(uri, ready, null, null)
+                    context.contentResolver.update(imageUri, ready, null, null)
                 }
-                uri
+                imageUri
             } catch (_: Exception) {
                 uri?.let { context.contentResolver.delete(it, null, null) }
                 null
